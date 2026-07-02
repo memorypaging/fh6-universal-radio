@@ -117,6 +117,7 @@ private:
         std::string title;
         std::string artist;
         std::size_t original_index = 0;
+        std::string numeric_id = "";
     };
     std::vector<InternalQueueEntry> queue_; // canonical URLs in playback order
     std::size_t queue_idx_ = 0;

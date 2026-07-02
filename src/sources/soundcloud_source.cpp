@@ -36,8 +36,11 @@ constexpr std::uint64_t kPcmBytesPerSec = 48000ull * 2ull * 2ull;
 
 bool is_playlist_url(std::string_view url) {
     // SoundCloud playlists typically contain /sets/ or /likes
+    // User pages list all tracks under /tracks
     return url.find("/sets/") != std::string_view::npos ||
-           url.find("/likes") != std::string_view::npos;
+           url.find("/likes") != std::string_view::npos ||
+           url.find("/tracks") != std::string_view::npos ||
+           url.find("/albums") != std::string_view::npos;
 }
 
 std::optional<std::string> worker_http_get(worker::WorkerClient* worker, const std::string& url) {
@@ -344,8 +347,8 @@ void SoundCloudSource::resolve_queue_locked() {
     queue_idx_ = 0;
 
     if (!is_playlist_url(effective_url)) {
-        // add a 0 at the end for the original_index
-        queue_.push_back({effective_url, "(loading)", "SoundCloud", 0}); 
+        // add a 0 at the end for the original_index, and "" for the numeric_id
+        queue_.push_back({effective_url, "(loading)", "SoundCloud", 0, ""}); 
         queue_version_.fetch_add(1, std::memory_order_release);
         queue_built_for_ = effective_url;
         const uint64_t gen = ++queue_generation_;
@@ -360,7 +363,7 @@ void SoundCloudSource::resolve_queue_locked() {
     const auto yt  = yt_dlp_path_.empty() ? L"yt-dlp" : yt_dlp_path_.wstring();
     std::wstring cmd = quote(yt) + L" --ignore-config --no-warnings --flat-playlist --skip-download "
                                    L"--encoding UTF-8 "
-                                   L"--print \"%(url)s\t%(title)s\t%(uploader)s\" ";
+                                   L"--print \"%(url)s\t%(title)s\t%(uploader)s\t%(id)s\" ";
     if (!cfg_.cookies_path.empty())
         cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
     cmd += L"-- " + quote(widen(effective_url));
@@ -411,35 +414,26 @@ void SoundCloudSource::resolve_queue_locked() {
             if (!id.empty() && id != "NA") {
                 std::string title;
                 std::string artist;
+                std::string num_id;
                 
-                // parse the 3 tab-separated values
+                // parse the 4 tab-separated values
                 if (tab1 != std::string::npos) {
                     auto tab2 = line.find('\t', tab1 + 1);
                     title = line.substr(tab1 + 1, tab2 == std::string::npos ? std::string::npos : tab2 - (tab1 + 1));
-                    if (tab2 != std::string::npos) artist = line.substr(tab2 + 1);
-                }
-
-                if (title.empty() || title == "NA") {
-                    title = "(loading)";
-                    auto com_pos = id.find("soundcloud.com/");
-                    if (com_pos != std::string::npos && id.find("api-v2") == std::string::npos) {
-                        std::string path = id.substr(com_pos + 15);
-                        auto slash = path.find('/');
-                        if (slash != std::string::npos) {
-                            std::string ext_artist = path.substr(0, slash);
-                            std::string ext_title = path.substr(slash + 1);
-                            auto qm = ext_title.find('?');
-                            if (qm != std::string::npos) ext_title = ext_title.substr(0, qm);
-                            std::replace(ext_artist.begin(), ext_artist.end(), '-', ' ');
-                            std::replace(ext_title.begin(), ext_title.end(), '-', ' ');
-                            if (!ext_title.empty()) title = ext_title;
-                            if (!ext_artist.empty() && (artist.empty() || artist == "NA")) artist = ext_artist;
+                    if (tab2 != std::string::npos) {
+                        auto tab3 = line.find('\t', tab2 + 1);
+                        artist = line.substr(tab2 + 1, tab3 == std::string::npos ? std::string::npos : tab3 - (tab2 + 1));
+                        if (tab3 != std::string::npos) {
+                            num_id = line.substr(tab3 + 1);
                         }
                     }
                 }
-                
+
+                if (title.empty() || title == "NA") title = "(loading)";
                 if (artist.empty() || artist == "NA") artist = "SoundCloud";
-                queue_.push_back({id, std::move(title), std::move(artist), og_idx++}); 
+                
+                if (num_id == "NA") num_id = "";
+                queue_.push_back({id, std::move(title), std::move(artist), og_idx++, std::move(num_id)}); 
             }
         }
         pos = (nl == std::string::npos) ? raw.size() : nl + 1;
@@ -831,8 +825,22 @@ void SoundCloudSource::drain_title_pipe_locked(Pipe* p) {
     auto uploader = take_line();
     auto duration = take_line();
     auto thumb    = take_line();
-    if (!title.empty() && title != "NA") p->info.title = std::move(title);
-    if (!uploader.empty() && uploader != "NA") p->info.artist = std::move(uploader);
+    if (!title.empty() && title != "NA") {
+        p->info.title = title;
+        if (p->for_queue_idx < queue_.size() && 
+           (queue_[p->for_queue_idx].title == "(loading)" || queue_[p->for_queue_idx].title == "SoundCloud Track" || queue_[p->for_queue_idx].title.empty())) {
+            queue_[p->for_queue_idx].title = title;
+            queue_version_.fetch_add(1, std::memory_order_release);
+        }
+    }
+    if (!uploader.empty() && uploader != "NA") {
+        p->info.artist = uploader;
+        if (p->for_queue_idx < queue_.size() && queue_[p->for_queue_idx].artist == "SoundCloud") {
+            queue_[p->for_queue_idx].artist = uploader;
+            queue_version_.fetch_add(1, std::memory_order_release);
+        }
+    }
+
     try {
         if (!duration.empty() && duration != "NA")
             p->info.duration_ms = static_cast<std::uint64_t>(std::stod(duration) * 1000.0);
@@ -893,7 +901,7 @@ void SoundCloudSource::pump(RingBuffer& ring) {
                 queue_version_.fetch_add(1, std::memory_order_release);
             }
 
-            if (++consecutive_failed_ >= 3) {
+            if (++consecutive_failed_ >= 15) {
                 log::warn("[sc] giving up after {} consecutive empty tracks", consecutive_failed_);
                 stop_pipe_locked();
                 return;
@@ -951,7 +959,6 @@ void SoundCloudSource::pump(RingBuffer& ring) {
 
 void SoundCloudSource::hydrate_queue(uint64_t generation) {
     struct Unresolved {
-        std::string original_url;
         std::string numeric_id;
     };
     std::vector<Unresolved> pending;
@@ -961,16 +968,8 @@ void SoundCloudSource::hydrate_queue(uint64_t generation) {
         if (queue_generation_.load(std::memory_order_acquire) != generation) return;
         
         for (std::size_t i = 0; i < queue_.size(); ++i) {
-            if (queue_[i].title == "SoundCloud Track" || queue_[i].title == "(loading)" || queue_[i].title.empty()) {
-                std::string num_id = queue_[i].url;
-                auto tracks_pos = num_id.find("/tracks/");
-                if (tracks_pos != std::string::npos) {
-                    num_id = num_id.substr(tracks_pos + 8);
-                    auto qm = num_id.find('?');
-                    if (qm != std::string::npos) num_id = num_id.substr(0, qm);
-
-                    pending.push_back({queue_[i].url, num_id});
-                }
+            if (!queue_[i].numeric_id.empty()) {
+                pending.push_back({queue_[i].numeric_id});
             }
         }
     }
@@ -1052,15 +1051,15 @@ void SoundCloudSource::hydrate_queue(uint64_t generation) {
                 }
             }
 
-            // apply parsed metadata directly to the queue entry
-            auto it = std::find_if(queue_.begin(), queue_.end(), [&](const auto& entry) {
-                return entry.url == track.original_url || entry.url.find(track.original_url) != std::string::npos;
-            });
-            
-            if (it != queue_.end()) {
-                it->title = std::move(title);
-                it->artist = std::move(artist);
-                updated_any = true;
+            // apply parsed metadata
+            for (auto& entry : queue_) {
+                if (entry.numeric_id == track.numeric_id) {
+                    if (entry.title != title || entry.artist != artist) {
+                        entry.title = std::move(title);
+                        entry.artist = std::move(artist);
+                        updated_any = true;
+                    }
+                }
             }
         }
         
@@ -1082,11 +1081,9 @@ void SoundCloudSource::hydrate_queue(uint64_t generation) {
         bool cleaned_up = false;
         for (auto& entry : queue_) {
             if (entry.title == "(loading)" || entry.title == "SoundCloud Track" || entry.title.empty()) {
-                if (entry.url.find("/tracks/") != std::string::npos) {
-                    entry.title = "Unavailable / DRM";
-                    entry.artist = "SoundCloud";
-                    cleaned_up = true;
-                }
+                entry.title = "Unavailable / DRM";
+                entry.artist = "SoundCloud";
+                cleaned_up = true;
             }
         }
 
