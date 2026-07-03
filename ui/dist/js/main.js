@@ -18,6 +18,7 @@ import { createOnlineRadio } from "./render/onlineRadio.js";
 import { createYoutubeMusic } from "./render/youtubeMusic.js";
 import { createSoundcloud } from "./render/soundcloud.js";
 import { createJellyfin } from "./render/jellyfin.js";
+import { createPlex } from "./render/plex.js";
 import { initI18n, onLangChange, t, setLang, getLang } from "./i18n.js";
 import { prefs } from "./preferences.js";
 import { downloadJson, todayStamp } from "./lib/download.js";
@@ -80,6 +81,7 @@ let onlineRadio;
 let youtubeMusic;
 let soundcloud;
 let jellyfin;
+let plex;
 
 async function switchSource(name) {
     try {
@@ -172,6 +174,7 @@ function render() {
     youtubeMusic.render();
     soundcloud.render();
     jellyfin.render();
+    plex.render();
 
     refs.sourceCard.hidden = false;
     refs.outputCard.hidden = !state.sources?.active;
@@ -218,6 +221,7 @@ if (restoreBtn && restoreFile) {
             youtubeMusic.invalidate();
             soundcloud.invalidate();
             jellyfin.invalidate();
+            plex.invalidate();
             renderSettings(refs.form, cfg);
             snapshotForm();
             state = await api.getState().catch(() => state);
@@ -293,6 +297,7 @@ $("#save-config").addEventListener("click", async () => {
         youtubeMusic.invalidate();
         soundcloud.invalidate();
         jellyfin.invalidate();
+        plex.invalidate();
         state = await api.getState().catch(() => state);
         render();
         toast(t("settings.saved"));
@@ -336,6 +341,7 @@ $("#reload-config").addEventListener("click", async () => {
         youtubeMusic.invalidate();
         soundcloud.invalidate();
         jellyfin.invalidate();
+        plex.invalidate();
         renderSettings(refs.form, cfg);
         snapshotForm();
         render();
@@ -386,6 +392,7 @@ function refreshAfterLangChange() {
     youtubeMusic.invalidate();
     soundcloud.invalidate();
     jellyfin.invalidate();
+    plex.invalidate();
     if (refs.drawer.classList.contains("open")) {
         renderSettings(refs.form, cfg);
         snapshotForm();
@@ -534,6 +541,16 @@ async function boot() {
     });
 
     jellyfin = createJellyfin(mainEl, {
+        getState: () => state,
+        getConfig: () => cfg,
+        onSaved: async () => {
+            cfg = await api.getConfig().catch(() => cfg);
+            state = await api.getState().catch(() => state);
+            render();
+        },
+    });
+
+    plex = createPlex(mainEl, {
         getState: () => state,
         getConfig: () => cfg,
         onSaved: async () => {

@@ -229,6 +229,19 @@
   "jellyfin.stations_saved": "Stations Jellyfin enregistrées",
   "jellyfin.playing": "Lecture de la playlist…",
 
+  "plex.title": "Plex",
+  "plex.description": "Sélectionnez une playlist, un album ou un artiste Plex à diffuser. La radio change de source et démarre immédiatement la diffusion.",
+  "plex.target_type": "Type de cible",
+  "plex.target_item": "Sélectionner un élément",
+  "plex.type.playlist": "Playlist",
+  "plex.type.album": "Album",
+  "plex.type.artist": "Artiste",
+  "plex.toggle_shuffle": "Activer/Désactiver la lecture aléatoire",
+  "plex.default_station_name": "Ma playlist",
+  "plex.new_station_name": "Nouvelle station",
+  "plex.stations_saved": "Stations Plex enregistrées",
+  "plex.playing": "Lecture de la playlist…",
+
   "ext.description": "Sélectionnez le périphérique de lecture Windows utilisé pour la capture audio et la session média pour les métadonnées et les commandes précédent/suivant.",
   "ext.capture_device": "Périphérique de capture",
   "ext.device_label": "Périphérique de capture audio externe",
@@ -274,6 +287,9 @@
   "schema.jellyfin.user_id": "ID utilisateur",
   "schema.jellyfin.api_key": "Clé API",
   "schema.jellyfin.use_favorites": "Utiliser les favoris",
+
+  "schema.plex.server_url": "URL du serveur",
+  "schema.plex.token": "X-Plex-Token",
 
   "schema.spotify.librespot_path": "Chemin librespot.exe",
   "schema.spotify.cache_dir": "Dossier de cache",

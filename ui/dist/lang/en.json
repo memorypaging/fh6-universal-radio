@@ -255,6 +255,20 @@
   "jellyfin.stations_saved": "Saved Jellyfin stations",
   "jellyfin.playing": "Playing playlist…",
 
+  // ─── Plex card ──────────────────────────────────────────────────────────
+  "plex.title": "Plex",
+  "plex.description": "Select a Plex Playlist, Album, or Artist to stream. The radio switches source and starts streaming immediately.",
+  "plex.target_type": "Target Type",
+  "plex.target_item": "Select Item",
+  "plex.type.playlist": "Playlist",
+  "plex.type.album": "Album",
+  "plex.type.artist": "Artist",
+  "plex.toggle_shuffle": "Toggle Shuffle",
+  "plex.default_station_name": "My Playlist",
+  "plex.new_station_name": "New Station",
+  "plex.stations_saved": "Saved Plex stations",
+  "plex.playing": "Playing playlist…",
+
   // ─── External Audio card ────────────────────────────────────────────────
   "ext.description": "Select the Windows playback device used for audio capture and the media session used for metadata and next/previous commands.",
   "ext.capture_device": "Capture device",
@@ -304,6 +318,9 @@
   "schema.jellyfin.user_id": "User ID",
   "schema.jellyfin.api_key": "API Key",
   "schema.jellyfin.use_favorites": "Use Favorites",
+
+  "schema.plex.server_url": "Server URL",
+  "schema.plex.token": "X-Plex-Token",
 
   "schema.spotify.librespot_path": "librespot.exe path",
   "schema.spotify.cache_dir": "Cache directory",

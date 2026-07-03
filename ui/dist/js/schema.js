@@ -7,6 +7,7 @@ export const SOURCE_SECTIONS = () => [
     ["youtube_music", "YouTube Music"],
     ["soundcloud", "SoundCloud"],
     ["jellyfin", "Jellyfin"],
+    ["plex", "Plex"],
     ["external_audio", t("source.external_audio")],
     ["spotify", "Spotify Connect"],
     ["vanilla_radio", t("source.vanilla_radio")],
@@ -94,6 +95,15 @@ export const SCHEMA = () => [
             ["server_url", t("schema.jellyfin.server_url"), "text"],
             ["user_id", t("schema.jellyfin.user_id"), "text"],
             ["api_key", t("schema.jellyfin.api_key"), "text"],
+        ],
+    ],
+    [
+        "plex",
+        "Plex",
+        [
+            ["enabled", t("schema.enabled"), "checkbox"],
+            ["server_url", t("schema.plex.server_url"), "text"],
+            ["token", t("schema.plex.token"), "text"],
         ],
     ],
     ["external_audio", t("source.external_audio"), [["enabled", t("schema.enabled"), "checkbox"]]],

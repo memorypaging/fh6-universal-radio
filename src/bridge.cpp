@@ -16,6 +16,7 @@
 #include "fh6/sources/youtube_music_source.hpp"
 #include "fh6/sources/soundcloud_source.hpp"
 #include "fh6/sources/jellyfin_source.hpp"
+#include "fh6/sources/plex_source.hpp"
 #include "fh6/sources/spotify_source.hpp"
 #include "fh6/worker/worker_client.hpp"
 #include "fh6/sources/online_radio_source.hpp"
@@ -213,6 +214,13 @@ void run_bridge(HMODULE self) noexcept {
         } else if (!c.jellyfin.enabled && mgr.find("jellyfin")) {
             mgr.unregister_source("jellyfin");
         }
+        if (c.plex.enabled && !mgr.find("plex")) {
+            auto src = std::make_unique<sources::PlexSource>(c.plex, c.general.ffmpeg_path,
+                                                                   worker.get());
+            if (src->initialize()) mgr.register_source(std::move(src));
+        } else if (!c.plex.enabled && mgr.find("plex")) {
+            mgr.unregister_source("plex");
+        }
         if (c.online_radio.enabled && !mgr.find("online_radio")) {
             auto src = std::make_unique<sources::OnlineRadioSource>(c.online_radio,
                                                                     c.general.ffmpeg_path, worker.get());
@@ -304,6 +312,14 @@ void run_bridge(HMODULE self) noexcept {
                 c.jellyfin.active_station = c.jellyfin.stations[(idx + 1) % c.jellyfin.stations.size()].name;
                 changed = true;
             }
+            else if (name == "plex" && c.plex.stations.size() > 1) {
+                size_t idx = 0;
+                for (size_t i = 0; i < c.plex.stations.size(); ++i) {
+                    if (c.plex.stations[i].name == c.plex.active_station) { idx = i; break; }
+                }
+                c.plex.active_station = c.plex.stations[(idx + 1) % c.plex.stations.size()].name;
+                changed = true;
+            }
             else if (name == "online_radio" && c.online_radio.stations.size() > 1) {
                 c.online_radio.default_station_index = (c.online_radio.default_station_index + 1) % c.online_radio.stations.size();
                 changed = true;
@@ -373,6 +389,13 @@ void run_bridge(HMODULE self) noexcept {
             jf->set_config(c.jellyfin);
             if (mgr.active() == jf && jf->playback_state() != PlaybackState::playing) {
                 jf->play();
+            }
+        }
+        if (auto* px = dynamic_cast<sources::PlexSource*>(mgr.find("plex"))) {
+            px->set_ffmpeg_path(c.general.ffmpeg_path);
+            px->set_config(c.plex);
+            if (mgr.active() == px && px->playback_state() != PlaybackState::playing) {
+                px->play();
             }
         }
         if (auto* ext = dynamic_cast<sources::ExternalAudioSource*>(mgr.find("external_audio"))) {

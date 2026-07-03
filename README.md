@@ -6,7 +6,7 @@
 
 <p align="center"><img src="assets/banner.png" alt="FH6 Universal Radio" /></p>
 
-An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio station fed from your **local music**, **online radio** stations, **Spotify**, **YouTube Music**, **SoundCloud**, **Jellyfin** server, or **any Windows app** (Deezer, a browser tab...), controlled from a browser dashboard.
+An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio station fed from your **local music**, **online radio** stations, **Spotify**, **YouTube Music**, **SoundCloud**, **Jellyfin** server, **Plex** server, or **any Windows app** (Deezer, a browser tab...), controlled from a browser dashboard.
 
 <p align="center">
   <img src="assets/ingame.png" alt="In-game radio station" width="49%" />
@@ -21,6 +21,7 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 - **SoundCloud**: paste any playlist, or track URL from the dashboard. Tracks are added to a searchable queue, with support for saving playlists as reusable stations.
 - **Spotify Connect**: cast from the Spotify app to an "FH6 Universal Radio" device (requires Spotify Premium).
 - **Jellyfin**: stream playlists from your own Jellyfin server, view queued tracks, and save playlists as stations for quick access later.
+- **Plex**: stream playlists, artists, and albums from your own Plex server, view queued tracks, and save as stations for quick access later.
 - **External audio**: capture any Windows app (Deezer, a browser tab...) and pipe it into the radio through a virtual audio cable.
 - **In-game radio integration**: audio is routed through FH6's radio bus, fades with menus and reacts to in-game volume like every other station.
 - **Live dashboard** at `http://localhost:8420`: switch source, transport controls, volume, settings.
@@ -143,4 +144,4 @@ Released under the [GNU General Public License v3.0](LICENSE). You're free to us
 
 ## Disclaimer
 
-Unofficial fan-made mod. Not affiliated with, endorsed by, or connected to Turn 10 Studios, Playground Games, Xbox Game Studios, Microsoft, Google, YouTube, SoundCloud (SoundCloud Global Limited & Co. KG), Jellyfin (Jellyfin LLC), or Spotify (Spotify AB). All trademarks belong to their respective owners. Use at your own risk.
+Unofficial fan-made mod. Not affiliated with, endorsed by, or connected to Turn 10 Studios, Playground Games, Xbox Game Studios, Microsoft, Google, YouTube, SoundCloud (SoundCloud Global Limited & Co. KG), Jellyfin (Jellyfin LLC), Plex (Plex, Inc.), or Spotify (Spotify AB). All trademarks belong to their respective owners. Use at your own risk.

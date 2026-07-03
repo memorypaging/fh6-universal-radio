@@ -104,6 +104,21 @@ struct JellyfinConfig {
     bool shuffle = true;
 };
 
+struct PlexStation {
+    std::string name;
+    std::string target_type = "playlist";
+    std::string playlist_id;
+};
+
+struct PlexConfig {
+    bool enabled = false;
+    std::string server_url;
+    std::string token;
+    std::vector<PlexStation> stations;
+    std::string active_station;
+    bool shuffle = true;
+};
+
 struct RadioStation {
     std::string name;
     std::string url;
@@ -156,6 +171,7 @@ struct Config {
     SoundCloudConfig soundcloud;
     AudioConfig audio;
     JellyfinConfig jellyfin;
+    PlexConfig plex;
     ExternalAudioConfig external_audio;
     SpotifyConfig spotify;
     OnlineRadioConfig online_radio;

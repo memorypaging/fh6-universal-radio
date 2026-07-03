@@ -69,4 +69,13 @@ export const api = {
 			request("/api/source/jellyfin/cast", { method: "POST", body: { playlist_id: playlistId, use_favorites: useFavorites } }),
 		shuffle: shuffle => request("/api/source/jellyfin/shuffle", { method: "POST", body: { shuffle } }),
 	},
+	
+	// Plex
+	plex: {
+		...sourceApi("plex"),
+		getDirectory: (type) => request(`/api/source/plex/directory?type=${encodeURIComponent(type)}`),
+		cast: (targetType, targetId) =>
+			request("/api/source/plex/cast", { method: "POST", body: { target_type: targetType, target_id: targetId } }),
+		shuffle: shuffle => request("/api/source/plex/shuffle", { method: "POST", body: { shuffle } }),
+	},
 };

@@ -206,6 +206,29 @@ Config load_config(const std::filesystem::path& path) {
         cfg.jellyfin.active_station = cfg.jellyfin.stations.front().name;
     }
 
+    const auto& px          = section(root, "plex");
+    cfg.plex.enabled        = pick<bool>(px, "enabled", cfg.plex.enabled);
+    cfg.plex.server_url     = pick<std::string>(px, "server_url", cfg.plex.server_url);
+    cfg.plex.token          = pick<std::string>(px, "token", cfg.plex.token);
+    cfg.plex.active_station = pick<std::string>(px, "active_station", cfg.plex.active_station);
+    cfg.plex.shuffle        = pick<bool>(px, "shuffle", cfg.plex.shuffle);
+
+    try {
+        if (px.contains("stations")) {
+            for (const auto& st : toml::find<std::vector<toml::value>>(px, "stations")) {
+                PlexStation s;
+                s.name          = pick<std::string>(st, "name", "");
+                s.target_type   = pick<std::string>(st, "target_type", "playlist");
+                s.playlist_id   = pick<std::string>(st, "playlist_id", "");
+                cfg.plex.stations.push_back(std::move(s));
+            }
+        }
+    } catch (...) {}
+
+    if (cfg.plex.active_station.empty() && !cfg.plex.stations.empty()) {
+        cfg.plex.active_station = cfg.plex.stations.front().name;
+    }
+
     const auto& or_sec       = section(root, "online_radio");
     cfg.online_radio.enabled = pick<bool>(or_sec, "enabled", cfg.online_radio.enabled);
     const int station_index =
@@ -459,6 +482,19 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
         e.kv("name", st.name);
         e.kv("playlist_id", st.playlist_id);
         e.kv("use_favorites", st.use_favorites);
+    }
+
+    e.header("plex");
+    e.kv("enabled", cfg.plex.enabled);
+    e.kv("server_url", cfg.plex.server_url);
+    e.kv("token", cfg.plex.token);
+    e.kv("active_station", cfg.plex.active_station);
+    e.kv("shuffle", cfg.plex.shuffle);
+    for (const auto& st : cfg.plex.stations) {
+        e.array_header("plex.stations");
+        e.kv("name", st.name);
+        e.kv("target_type", st.target_type);
+        e.kv("playlist_id", st.playlist_id);
     }
 
     e.header("external_audio");

@@ -8,7 +8,7 @@
 [general]
 port              = 8420
 ring_buffer_mb    = 4
-default_source    = "online_radio"    # local_files | online_radio | youtube_music | jellyfin | external_audio | spotify
+default_source    = "online_radio"    # local_files | online_radio | youtube_music | soundcloud | jellyfin | plex | external_audio | spotify
 fallback_source   = "local_files"
 ffmpeg_path       = ''                # blank = auto-download to fh6-radio/bin (else `ffmpeg` on PATH); shared by all sources
 yt_dlp_path       = ''                # blank = auto-download to fh6-radio/bin (else `yt-dlp` on PATH)
@@ -61,6 +61,13 @@ api_key            = ''                # generate this in the Jellyfin dashboard
 user_id            = ''                # the ID of the user to track playback against
 default_playlist   = ''                # jellyfin playlist ID goes here
 use_favorites      = false             # set to true to play your favorites instead of a playlist
+shuffle            = true              # true or false
+
+[plex]
+enabled            = false
+server_url         = ''                # e.g. 'http://127.0.0.1:32400'
+token              = ''                # X-Plex-Token
+active_station     = ''
 shuffle            = true              # true or false
 
 [external_audio]

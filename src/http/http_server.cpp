@@ -8,6 +8,7 @@
 #include "fh6/sources/youtube_music_source.hpp"
 #include "fh6/sources/soundcloud_source.hpp"
 #include "fh6/sources/jellyfin_source.hpp"
+#include "fh6/sources/plex_source.hpp"
 #include "fh6/sources/external_audio_source.hpp"
 #include "fh6/sources/external_media_session.hpp"
 #include "fh6/sources/spotify_source.hpp"
@@ -134,6 +135,15 @@ json source_to_json(IAudioSource* s) {
         j["details"]["queue_size"] = snap.entries.size();
         j["details"]["queue_cursor"] = snap.cursor;
     }
+    if (auto* px = dynamic_cast<sources::PlexSource*>(s)) {
+        j["details"]["shuffle"] = px->shuffle();
+        j["details"]["station_count"] = px->station_count();
+        j["details"]["active_station"] = px->active_station_name();
+
+        auto snap = px->queue_snapshot();
+        j["details"]["queue_size"] = snap.entries.size();
+        j["details"]["queue_cursor"] = snap.cursor;
+    }
     if (auto* rd = dynamic_cast<sources::OnlineRadioSource*>(s))
         j["details"]["song_history"] = rd->song_history();
     return j;
@@ -214,6 +224,28 @@ JellyfinStation jf_station_from_json(const json& j) {
     };
 }
 
+json px_station_to_json(const PlexStation& s) {
+    return json{
+        {"name", s.name},
+        {"target_type", s.target_type},
+        {"playlist_id", s.playlist_id}
+    };
+}
+
+json px_stations_to_json(const std::vector<PlexStation>& v) {
+    json a = json::array();
+    for (const auto& s : v) a.push_back(px_station_to_json(s));
+    return a;
+}
+
+PlexStation px_station_from_json(const json& j) {
+    return PlexStation{
+        j.value("name", ""),
+        j.value("target_type", "playlist"),
+        j.value("playlist_id", "")
+    };
+}
+
 json config_to_json(const Config& c) {
     return json{
         {"general",
@@ -257,6 +289,15 @@ json config_to_json(const Config& c) {
              {"active_station", c.jellyfin.active_station},
              {"stations", jf_stations_to_json(c.jellyfin.stations)},
              {"shuffle", c.jellyfin.shuffle},
+         }},
+        {"plex",
+         json{
+             {"enabled", c.plex.enabled},
+             {"server_url", c.plex.server_url},
+             {"token", c.plex.token},
+             {"active_station", c.plex.active_station},
+             {"stations", px_stations_to_json(c.plex.stations)},
+             {"shuffle", c.plex.shuffle},
          }},
         {"external_audio",
          json{
@@ -416,6 +457,18 @@ void apply_patch(Config& c, const json& j) {
             std::vector<JellyfinStation> parsed;
             for (const auto& st : *sts) parsed.push_back(jf_station_from_json(st));
             c.jellyfin.stations = std::move(parsed);
+        }
+    }
+    if (auto it = j.find("plex"); it != j.end()) {
+        c.plex.enabled          = pull(*it, "enabled", c.plex.enabled);
+        c.plex.server_url       = pull(*it, "server_url", c.plex.server_url);
+        c.plex.token            = pull(*it, "token", c.plex.token);
+        c.plex.active_station   = pull(*it, "active_station", c.plex.active_station);
+        c.plex.shuffle          = pull(*it, "shuffle", c.plex.shuffle);
+        if (auto sts = it->find("stations"); sts != it->end() && sts->is_array()) {
+            std::vector<PlexStation> parsed;
+            for (const auto& st : *sts) parsed.push_back(px_station_from_json(st));
+            c.plex.stations = std::move(parsed);
         }
     }
     if (auto it = j.find("external_audio"); it != j.end()) {
@@ -1166,6 +1219,100 @@ struct HttpServer::Impl {
             if (!jf->jump_to(idx)) return fail(400, "index out of range");
             if (was_active) mgr.ring().drain();
             mgr.switch_to("jellyfin");
+            return ok();
+        }
+        if (m == "GET" && p.starts_with("/api/source/plex/directory")) {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            
+            std::string type = "playlist";
+            auto qm = req.path.find('?');
+            if (qm != std::string::npos) {
+                std::string query = req.path.substr(qm + 1);
+                if (query.starts_with("type=")) {
+                    type = query.substr(5);
+                }
+            }
+            
+            std::string dir_json = px->fetch_directory(type);
+            return send_response(client, 200, dir_json);
+        }
+        if (m == "POST" && p == "/api/source/plex/cast") {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            auto body = json::parse(req.body);
+            auto target_id = body.value("target_id", std::string{});
+            if (target_id.empty()) target_id = body.value("playlist_id", std::string{});
+            auto target_type = body.value("target_type", std::string{"playlist"});
+            
+            if (target_id.empty()) return fail(400, "target_id required");
+            const bool was_active = (mgr.active() == px);
+            if (!px->cast(std::move(target_type), std::move(target_id))) return fail(502, "plex fetch failed");
+            if (was_active) mgr.ring().drain();
+            mgr.switch_to("plex");
+            return ok();
+        }
+        if (m == "POST" && p == "/api/source/plex/shuffle") {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            auto shuffle = json::parse(req.body).at("shuffle").get<bool>();
+            px->set_shuffle(shuffle);
+            store.patch([shuffle](Config& c) { c.plex.shuffle = shuffle; });
+            return ok();
+        }
+        if (m == "GET" && p == "/api/source/plex/stations") {
+            auto snap = store.snapshot();
+            return ok(json{
+                {"stations", px_stations_to_json(snap.plex.stations)},
+                {"active_station", snap.plex.active_station}
+            });
+        }
+        if (m == "PUT" && p == "/api/source/plex/stations") {
+            auto j = json::parse(req.body);
+            store.patch([&](Config& c) {
+                if (auto sts = j.find("stations"); sts != j.end() && sts->is_array()) {
+                    std::vector<PlexStation> parsed;
+                    for (const auto& st : *sts) parsed.push_back(px_station_from_json(st));
+                    c.plex.stations = std::move(parsed);
+                }
+                if (auto a = j.find("active_station"); a != j.end() && a->is_string())
+                    c.plex.active_station = a->get<std::string>();
+            });
+            if (auto* px = find_typed<sources::PlexSource>("plex"))
+                px->set_config(store.snapshot().plex);
+            return ok();
+        }
+        if (m == "POST" && p == "/api/source/plex/activate") {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            auto name = json::parse(req.body).value("name", std::string{});
+            const bool was_active = (mgr.active() == px);
+            store.patch([&](Config& c) { c.plex.active_station = name; });
+            px->set_active_station(name);
+            if (was_active) mgr.ring().drain();
+            px->play();
+            mgr.switch_to("plex");
+            return ok();
+        }
+        if (m == "GET" && p == "/api/source/plex/queue") {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            auto snap = px->queue_snapshot();
+            json tracks = json::array();
+            for (const auto& e : snap.entries) {
+                tracks.push_back(
+                    json{{"index", e.index}, {"title", e.title}, {"artist", e.artist}, {"album", e.album}});
+            }
+            return ok(json{{"cursor", snap.cursor}, {"tracks", tracks}});
+        }
+        if (m == "POST" && p == "/api/source/plex/play" && !req.body.empty()) {
+            auto* px = find_typed<sources::PlexSource>("plex");
+            if (!px) return fail(404, "plex not registered");
+            auto idx = json::parse(req.body).at("index").get<std::size_t>();
+            const bool was_active = (mgr.active() == px);
+            if (!px->jump_to(idx)) return fail(400, "index out of range");
+            if (was_active) mgr.ring().drain();
+            mgr.switch_to("plex");
             return ok();
         }
         if (m == "POST" && p == "/api/source/online_radio/cast") {
