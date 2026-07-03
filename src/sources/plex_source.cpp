@@ -204,15 +204,26 @@ std::unique_ptr<PlexSource::Pipe> PlexSource::spawn_pipe_locked(std::size_t for_
                                                  
     std::string stream_url = cfg_.server_url + queue_[for_idx].key;
 
+    // add token to URL directly so it survives HTTP redirects
+    if (stream_url.find('?') == std::string::npos) {
+        stream_url += "?X-Plex-Token=" + cfg_.token;
+    } else {
+        stream_url += "&X-Plex-Token=" + cfg_.token;
+    }
+
+    // inject standard HTTP reconnect flags to prevent dropouts
     std::wstring cmd = quote(ff) +
         L" -loglevel error -headers " + quote(auth_header) +
+        L" -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 " +
         L" -i " + quote(widen(stream_url)) + L" -f s16le ";
+        
     if (volume_norm_.load(std::memory_order_acquire))
         cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
     cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
 
     if (worker_ && worker_->alive()) {
-        if (auto result = worker_->spawn_single(cmd); result.ok) {
+        // use spawn_pipeline to request a 1MB buffer (1 << 20)
+        if (auto result = worker_->spawn_pipeline({cmd}, L"", false, -1, 1 << 20); result.ok) {
             pipe->worker      = worker_;
             pipe->pipeline_id = result.pipeline_id;
             pipe->read_pipe   = result.pcm_pipe;
