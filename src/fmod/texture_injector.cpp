@@ -79,19 +79,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             bool is_default_artwork = false;
 
             if (!url.empty()) {
-                // redact the token from the logs
-                std::string safe_url = url;
-                size_t token_pos = safe_url.find("X-Plex-Token=");
-                if (token_pos != std::string::npos) {
-                    size_t end_pos = safe_url.find('&', token_pos);
-                    if (end_pos == std::string::npos) {
-                        safe_url.replace(token_pos + 13, std::string::npos, "<REDACTED>");
-                    } else {
-                        safe_url.replace(token_pos + 13, end_pos - (token_pos + 13), "<REDACTED>");
-                    }
-                }
-                
-                log::info("[dx12] job {}: delegating artwork download to worker process: {}", my_job_id, safe_url);
+                log::info("[dx12] job {}: delegating artwork download to worker process: {}", my_job_id, url);
                 
                 if (local_worker) {
                     // IPC call blocks until the worker finishes downloading to raw_path
