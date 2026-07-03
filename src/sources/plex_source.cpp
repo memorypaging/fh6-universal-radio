@@ -43,7 +43,7 @@ bool same_query_target(const PlexConfig& a, const PlexConfig& b) noexcept {
         return c.stations.empty() ? PlexStation{} : c.stations.front();
     };
     auto ta = get_target(a), tb = get_target(b);
-    return ta.playlist_id == tb.playlist_id;
+    return ta.playlist_id == tb.playlist_id && ta.target_type == tb.target_type;
 }
 
 std::optional<std::string> http_get(const PlexConfig& cfg, const std::string& path) {
@@ -191,6 +191,11 @@ void PlexSource::shutdown() noexcept {
 
 std::unique_ptr<PlexSource::Pipe> PlexSource::spawn_pipe_locked(std::size_t for_idx) {
     if (queue_.empty() || for_idx >= queue_.size()) return nullptr;
+
+    if (cfg_.token.find_first_of("\r\n\"") != std::string::npos) {
+        log::error("[plex] token contains invalid characters for ffmpeg spawn");
+        return nullptr;
+    }
 
     auto pipe           = std::make_unique<Pipe>();
     pipe->for_queue_idx = for_idx;
@@ -488,6 +493,11 @@ void PlexSource::set_config(PlexConfig cfg) {
             start_pipe_locked();
             if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
         }
+    } else if (requery) {
+        discard_prefetch_locked();
+        stop_pipe_locked();
+        queue_.clear();
+        current_idx_ = 0;
     } else if (shuffle_flip) {
         if (cfg_.shuffle) {
             shuffle_range(queue_, current_idx_ + 1);
@@ -534,10 +544,27 @@ TrackInfo PlexSource::current_track() const {
     info.album       = t.album;
     info.duration_ms = t.duration_ms;
     if (!t.thumb.empty() && !cfg_.server_url.empty()) {
-        info.artwork_url = std::format("{}{}?X-Plex-Token={}", cfg_.server_url, t.thumb, cfg_.token);
+        info.artwork_url = std::format("/api/artwork?v={}", t.original_index);
     }
     if (pipe_) info.position_ms = pipe_->position_ms.load(std::memory_order_acquire);
     return info;
+}
+
+std::optional<ArtworkImage> PlexSource::artwork() const {
+    std::string url;
+    {
+        std::scoped_lock lk{mu_};
+        if (queue_.empty() || current_idx_ >= queue_.size()) return std::nullopt;
+        const auto& t = queue_[current_idx_];
+        if (t.thumb.empty() || cfg_.server_url.empty() || cfg_.token.empty()) return std::nullopt;
+        url = std::format("{}{}?X-Plex-Token={}", cfg_.server_url, t.thumb, cfg_.token);
+    }
+    
+    if (auto body = net::http_get(url)) {
+        std::string mime = (body->size() >= 4 && body->starts_with("\x89PNG")) ? "image/png" : "image/jpeg";
+        return ArtworkImage{std::move(mime), std::move(*body)};
+    }
+    return std::nullopt;
 }
 
 AuthState PlexSource::auth_state() const noexcept {

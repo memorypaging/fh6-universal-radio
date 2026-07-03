@@ -294,7 +294,7 @@ json config_to_json(const Config& c) {
          json{
              {"enabled", c.plex.enabled},
              {"server_url", c.plex.server_url},
-             {"token", c.plex.token},
+             {"token", c.plex.token.empty() ? "" : "********"},
              {"active_station", c.plex.active_station},
              {"stations", px_stations_to_json(c.plex.stations)},
              {"shuffle", c.plex.shuffle},
@@ -462,7 +462,8 @@ void apply_patch(Config& c, const json& j) {
     if (auto it = j.find("plex"); it != j.end()) {
         c.plex.enabled          = pull(*it, "enabled", c.plex.enabled);
         c.plex.server_url       = pull(*it, "server_url", c.plex.server_url);
-        c.plex.token            = pull(*it, "token", c.plex.token);
+        auto tk = pull<std::string>(*it, "token", "");
+        if (!tk.empty() && tk != "********") c.plex.token = tk;
         c.plex.active_station   = pull(*it, "active_station", c.plex.active_station);
         c.plex.shuffle          = pull(*it, "shuffle", c.plex.shuffle);
         if (auto sts = it->find("stations"); sts != it->end() && sts->is_array()) {
