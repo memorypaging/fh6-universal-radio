@@ -544,7 +544,7 @@ TrackInfo PlexSource::current_track() const {
     info.album       = t.album;
     info.duration_ms = t.duration_ms;
     if (!t.thumb.empty() && !cfg_.server_url.empty()) {
-        info.artwork_url = std::format("/api/artwork?v={}", t.original_index);
+        info.artwork_url = std::format("/api/artwork?v={}", std::hash<std::string>{}(t.thumb));
     }
     if (pipe_) info.position_ms = pipe_->position_ms.load(std::memory_order_acquire);
     return info;
