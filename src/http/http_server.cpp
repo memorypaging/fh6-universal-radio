@@ -286,7 +286,7 @@ json config_to_json(const Config& c) {
          json{
              {"enabled", c.jellyfin.enabled},
              {"server_url", c.jellyfin.server_url},
-             {"api_key", c.jellyfin.api_key.empty() ? "" : "********"},
+             {"api_key", c.jellyfin.api_key},
              {"user_id", c.jellyfin.user_id},
              {"active_station", c.jellyfin.active_station},
              {"stations", jf_stations_to_json(c.jellyfin.stations)},
@@ -296,7 +296,7 @@ json config_to_json(const Config& c) {
          json{
              {"enabled", c.plex.enabled},
              {"server_url", c.plex.server_url},
-             {"token", c.plex.token.empty() ? "" : "********"},
+             {"token", c.plex.token},
              {"active_station", c.plex.active_station},
              {"stations", px_stations_to_json(c.plex.stations)},
              {"shuffle", c.plex.shuffle},
@@ -451,8 +451,7 @@ void apply_patch(Config& c, const json& j) {
     if (auto it = j.find("jellyfin"); it != j.end()) {
         c.jellyfin.enabled          = pull(*it, "enabled", c.jellyfin.enabled);
         c.jellyfin.server_url       = pull(*it, "server_url", c.jellyfin.server_url);
-        auto ak = pull<std::string>(*it, "api_key", "");
-        if (!ak.empty() && ak != "********") c.jellyfin.api_key = ak;
+        c.jellyfin.api_key          = pull(*it, "api_key", c.jellyfin.api_key);
         c.jellyfin.user_id          = pull(*it, "user_id", c.jellyfin.user_id);
         c.jellyfin.active_station   = pull(*it, "active_station", c.jellyfin.active_station);
         c.jellyfin.shuffle          = pull(*it, "shuffle", c.jellyfin.shuffle);
@@ -465,8 +464,7 @@ void apply_patch(Config& c, const json& j) {
     if (auto it = j.find("plex"); it != j.end()) {
         c.plex.enabled          = pull(*it, "enabled", c.plex.enabled);
         c.plex.server_url       = pull(*it, "server_url", c.plex.server_url);
-        auto tk = pull<std::string>(*it, "token", "");
-        if (!tk.empty() && tk != "********") c.plex.token = tk;
+        c.plex.token            = pull(*it, "token", c.plex.token);
         c.plex.active_station   = pull(*it, "active_station", c.plex.active_station);
         c.plex.shuffle          = pull(*it, "shuffle", c.plex.shuffle);
         if (auto sts = it->find("stations"); sts != it->end() && sts->is_array()) {
