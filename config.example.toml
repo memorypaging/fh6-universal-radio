@@ -59,16 +59,29 @@ enabled            = false
 server_url         = ''                # e.g. 'http://127.0.0.1:8096'
 api_key            = ''                # generate this in the Jellyfin dashboard
 user_id            = ''                # the ID of the user to track playback against
-default_playlist   = ''                # jellyfin playlist ID goes here
-use_favorites      = false             # set to true to play your favorites instead of a playlist
+active_station     = ''                # which station is currently active
 shuffle            = true              # true or false
+
+# you can add as many stations as you want below. name + target_type + playlist_id
+# are required; the rest are filled in automatically when you save a station from the dashboard
+#[[jellyfin.stations]]
+#name = "My Playlist"
+#target_type = "playlist"
+#playlist_id = ""
 
 [plex]
 enabled            = false
 server_url         = ''                # e.g. 'http://127.0.0.1:32400'
 token              = ''                # X-Plex-Token
-active_station     = ''
+active_station     = ''                # which station is currently active
 shuffle            = true              # true or false
+
+# you can add as many stations as you want below. name + target_type + playlist_id
+# are required; the rest are filled in automatically when you save a station from the dashboard
+#[[plex.stations]]
+#name = "My Playlist"
+#target_type = "playlist"
+#playlist_id = ""
 
 [external_audio]
 # Off by default. Enable from the dashboard Settings drawer before using External Audio.

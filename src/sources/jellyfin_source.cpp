@@ -66,13 +66,31 @@ std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg
         log::warn("[jellyfin] target_id required when target_type != 'favorites'");
         return std::nullopt;
     }
+
+    auto url_encode = [](const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (unsigned char c : s) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~') {
+                out += c;
+            } else {
+                out += std::format("%{:02X}", c);
+            }
+        }
+        return out;
+    };
+
     std::string path;
     if (target_type == "favorites") {
         path = std::format("/Users/{}/Items?Filters=IsFavorite&IncludeItemTypes=Audio&Recursive=true", cfg.user_id);
-    } else if (target_type == "artist") {
-        path = std::format("/Users/{}/Items?ArtistIds={}&Filters=IsNotFolder&Recursive=true&IncludeItemTypes=Audio", cfg.user_id, target_id);
     } else {
-        path = std::format("/Users/{}/Items?ParentId={}&Filters=IsNotFolder&Recursive=true&IncludeItemTypes=Audio", cfg.user_id, target_id);
+        const std::string encoded_id = url_encode(target_id);
+        if (target_type == "artist") {
+            path = std::format("/Users/{}/Items?ArtistIds={}&Filters=IsNotFolder&Recursive=true&IncludeItemTypes=Audio", cfg.user_id, encoded_id);
+        } else {
+            path = std::format("/Users/{}/Items?ParentId={}&Filters=IsNotFolder&Recursive=true&IncludeItemTypes=Audio", cfg.user_id, encoded_id);
+        }
     }
     auto body = http_get(cfg, path);
     if (!body) return std::nullopt;
