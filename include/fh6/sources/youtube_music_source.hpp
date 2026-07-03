@@ -54,6 +54,8 @@ public:
     std::size_t station_count() const noexcept;
     std::string active_station_name() const;
 
+    static bool is_valid_url(std::string_view url);
+
     struct QueueEntry {
         std::size_t index;
         std::string url;

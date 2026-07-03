@@ -430,9 +430,14 @@ void apply_patch(Config& c, const json& j) {
         c.youtube_music.enabled      = pull(*it, "enabled", c.youtube_music.enabled);
         c.youtube_music.cookies_path = pull_path(*it, "cookies_path", c.youtube_music.cookies_path);
         c.youtube_music.active_station = pull(*it, "active_station", c.youtube_music.active_station);
-        if (auto sts = it->find("stations"); sts != it->end() && sts->is_array()) {
+        if (auto sts = j.find("stations"); sts != j.end() && sts->is_array()) {
             std::vector<YouTubeStation> parsed;
-            for (const auto& st : *sts) parsed.push_back(yt_station_from_json(st));
+            for (const auto& st : *sts) {
+                auto parsed_st = yt_station_from_json(st);
+                if (sources::YouTubeMusicSource::is_valid_url(parsed_st.url)) {
+                    parsed.push_back(std::move(parsed_st));
+                }
+            }
             c.youtube_music.stations = std::move(parsed);
         }
         c.youtube_music.shuffle = pull(*it, "shuffle", c.youtube_music.shuffle);
@@ -443,7 +448,12 @@ void apply_patch(Config& c, const json& j) {
         c.soundcloud.active_station = pull(*it, "active_station", c.soundcloud.active_station);
         if (auto sts = it->find("stations"); sts != it->end() && sts->is_array()) {
             std::vector<SoundCloudStation> parsed;
-            for (const auto& st : *sts) parsed.push_back(sc_station_from_json(st));
+            for (const auto& st : *sts) {
+                auto parsed_st = sc_station_from_json(st);
+                if (sources::SoundCloudSource::is_valid_url(parsed_st.url)) {
+                    parsed.push_back(std::move(parsed_st));
+                }
+            }
             c.soundcloud.stations = std::move(parsed);
         }
         c.soundcloud.shuffle = pull(*it, "shuffle", c.soundcloud.shuffle);
@@ -666,6 +676,50 @@ void send_response(SOCKET client, int code, std::string_view body,
     auto headers = resp.str();
     send_all(client, headers);
     send_all(client, body);
+}
+
+std::string url_decode(std::string_view in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%') {
+            if (i + 2 < in.size()) {
+                char h = in[i + 1];
+                char l = in[i + 2];
+                int hv = (h >= '0' && h <= '9') ? h - '0' : (h >= 'a' && h <= 'f') ? h - 'a' + 10 : (h >= 'A' && h <= 'F') ? h - 'A' + 10 : -1;
+                int lv = (l >= '0' && l <= '9') ? l - '0' : (l >= 'a' && l <= 'f') ? l - 'a' + 10 : (l >= 'A' && l <= 'F') ? l - 'A' + 10 : -1;
+                if (hv != -1 && lv != -1) {
+                    out.push_back(static_cast<char>((hv << 4) | lv));
+                    i += 2;
+                    continue;
+                }
+            }
+        } else if (in[i] == '+') {
+            out.push_back(' ');
+            continue;
+        }
+        out.push_back(in[i]);
+    }
+    return out;
+}
+
+std::string get_query_param(std::string_view path, std::string_view key) {
+    auto qm = path.find('?');
+    if (qm == std::string_view::npos) return "";
+    std::string_view query = path.substr(qm + 1);
+    while (!query.empty()) {
+        auto amp = query.find('&');
+        auto pair = query.substr(0, amp);
+        auto eq = pair.find('=');
+        if (eq != std::string_view::npos) {
+            if (pair.substr(0, eq) == key) {
+                return url_decode(pair.substr(eq + 1));
+            }
+        }
+        if (amp == std::string_view::npos) break;
+        query = query.substr(amp + 1);
+    }
+    return "";
 }
 
 bool serve_file(SOCKET client, const std::filesystem::path& file) {
@@ -1000,6 +1054,7 @@ struct HttpServer::Impl {
             if (!yt) return fail(404, "youtube_music not registered");
             auto url              = json::parse(req.body).at("url").get<std::string>();
             if (url.empty()) return fail(400, "url required");
+            if (!sources::YouTubeMusicSource::is_valid_url(url)) return fail(400, "invalid youtube music url");
             const bool was_active = (mgr.active() == yt);
             yt->stop();
             yt->set_target(std::move(url));
@@ -1028,7 +1083,12 @@ struct HttpServer::Impl {
             store.patch([&](Config& c) {
                 if (auto sts = j.find("stations"); sts != j.end() && sts->is_array()) {
                     std::vector<YouTubeStation> parsed;
-                    for (const auto& st : *sts) parsed.push_back(yt_station_from_json(st));
+                    for (const auto& st : *sts) {
+                        auto parsed_st = yt_station_from_json(st);
+                        if (sources::YouTubeMusicSource::is_valid_url(parsed_st.url)) {
+                            parsed.push_back(std::move(parsed_st));
+                        }
+                    }
                     c.youtube_music.stations = std::move(parsed);
                 }
                 if (auto a = j.find("active_station"); a != j.end() && a->is_string())
@@ -1076,6 +1136,7 @@ struct HttpServer::Impl {
             if (!sc) return fail(404, "soundcloud not registered");
             auto url              = json::parse(req.body).at("url").get<std::string>();
             if (url.empty()) return fail(400, "url required");
+            if (!sources::SoundCloudSource::is_valid_url(url)) return fail(400, "invalid soundcloud url");
             const bool was_active = (mgr.active() == sc);
             sc->stop();
             sc->set_target(std::move(url));
@@ -1104,7 +1165,12 @@ struct HttpServer::Impl {
             store.patch([&](Config& c) {
                 if (auto sts = j.find("stations"); sts != j.end() && sts->is_array()) {
                     std::vector<SoundCloudStation> parsed;
-                    for (const auto& st : *sts) parsed.push_back(sc_station_from_json(st));
+                    for (const auto& st : *sts) {
+                        auto parsed_st = sc_station_from_json(st);
+                        if (sources::SoundCloudSource::is_valid_url(parsed_st.url)) {
+                            parsed.push_back(std::move(parsed_st));
+                        }
+                    }
                     c.soundcloud.stations = std::move(parsed);
                 }
                 if (auto a = j.find("active_station"); a != j.end() && a->is_string())
@@ -1151,14 +1217,8 @@ struct HttpServer::Impl {
             auto* jf = find_typed<sources::JellyfinSource>("jellyfin");
             if (!jf) return fail(404, "jellyfin not registered");
             
-            std::string type = "playlist";
-            auto qm = req.path.find('?');
-            if (qm != std::string::npos) {
-                std::string query = req.path.substr(qm + 1);
-                if (query.starts_with("type=")) {
-                    type = query.substr(5);
-                }
-            }
+            std::string type = get_query_param(req.path, "type");
+            if (type.empty()) type = "playlist";
             
             std::string dir_json = jf->fetch_directory(type);
             return send_response(client, 200, dir_json);
@@ -1245,14 +1305,8 @@ struct HttpServer::Impl {
             auto* px = find_typed<sources::PlexSource>("plex");
             if (!px) return fail(404, "plex not registered");
             
-            std::string type = "playlist";
-            auto qm = req.path.find('?');
-            if (qm != std::string::npos) {
-                std::string query = req.path.substr(qm + 1);
-                if (query.starts_with("type=")) {
-                    type = query.substr(5);
-                }
-            }
+            std::string type = get_query_param(req.path, "type");
+            if (type.empty()) type = "playlist";
             
             std::string dir_json = px->fetch_directory(type);
             return send_response(client, 200, dir_json);

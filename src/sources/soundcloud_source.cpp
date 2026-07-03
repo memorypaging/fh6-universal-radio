@@ -219,6 +219,22 @@ std::string SoundCloudSource::active_station_name() const {
     return st ? st->name : std::string{};
 }
 
+bool SoundCloudSource::is_valid_url(std::string_view url) {
+    std::string_view without_scheme = url;
+    if (url.starts_with("http://")) without_scheme = url.substr(7);
+    else if (url.starts_with("https://")) without_scheme = url.substr(8);
+    auto is_domain = [](std::string_view s, std::string_view domain) {
+        if (!s.starts_with(domain)) return false;
+        if (s.length() == domain.length()) return true;
+        char next = s[domain.length()];
+        return next == '/' || next == '?';
+    };
+    return is_domain(without_scheme, "soundcloud.com") ||
+           is_domain(without_scheme, "www.soundcloud.com") ||
+           is_domain(without_scheme, "m.soundcloud.com") ||
+           is_domain(without_scheme, "on.soundcloud.com");
+}
+
 bool SoundCloudSource::initialize() {
     if (!cfg_.enabled) return false;
 
