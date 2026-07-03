@@ -20,7 +20,7 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 - **YouTube Music**: paste any video, playlist, or YT Music URL from the dashboard. Tracks are added to a searchable queue, with support for saving playlists as reusable stations.
 - **SoundCloud**: paste any playlist, or track URL from the dashboard. Tracks are added to a searchable queue, with support for saving playlists as reusable stations.
 - **Spotify Connect**: cast from the Spotify app to an "FH6 Universal Radio" device (requires Spotify Premium).
-- **Jellyfin**: stream playlists from your own Jellyfin server, view queued tracks, and save playlists as stations for quick access later.
+- **Jellyfin**: stream playlists, artists, and albums from your own Jellyfin server, view queued tracks, and save as stations for quick access later.
 - **Plex**: stream playlists, artists, and albums from your own Plex server, view queued tracks, and save as stations for quick access later.
 - **External audio**: capture any Windows app (Deezer, a browser tab...) and pipe it into the radio through a virtual audio cable.
 - **In-game radio integration**: audio is routed through FH6's radio bus, fades with menus and reacts to in-game volume like every other station.

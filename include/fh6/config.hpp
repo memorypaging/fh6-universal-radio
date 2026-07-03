@@ -90,6 +90,7 @@ struct SoundCloudConfig {
 
 struct JellyfinStation {
     std::string name;
+    std::string target_type = "playlist";
     std::string playlist_id;
     bool use_favorites = false;
 };

@@ -65,8 +65,9 @@ export const api = {
 	// Jellyfin
 	jellyfin: {
 		...sourceApi("jellyfin"),
-		cast: (playlistId, useFavorites) =>
-			request("/api/source/jellyfin/cast", { method: "POST", body: { playlist_id: playlistId, use_favorites: useFavorites } }),
+		getDirectory: (type) => request(`/api/source/jellyfin/directory?type=${encodeURIComponent(type)}`),
+		cast: (targetType, targetId) =>
+			request("/api/source/jellyfin/cast", { method: "POST", body: { target_type: targetType, target_id: targetId } }),
 		shuffle: shuffle => request("/api/source/jellyfin/shuffle", { method: "POST", body: { shuffle } }),
 	},
 	

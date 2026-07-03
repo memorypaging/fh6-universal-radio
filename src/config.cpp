@@ -187,6 +187,7 @@ Config load_config(const std::filesystem::path& path) {
             for (const auto& st : toml::find<std::vector<toml::value>>(jf, "stations")) {
                 JellyfinStation s;
                 s.name          = pick<std::string>(st, "name", "");
+                s.target_type   = pick<std::string>(st, "target_type", "playlist");
                 s.playlist_id   = pick<std::string>(st, "playlist_id", "");
                 s.use_favorites = pick<bool>(st, "use_favorites", false);
                 cfg.jellyfin.stations.push_back(std::move(s));
@@ -199,7 +200,7 @@ Config load_config(const std::filesystem::path& path) {
         auto dp = pick<std::string>(jf, "default_playlist", "");
         auto uf = pick<bool>(jf, "use_favorites", false);
         if (!dp.empty() || uf) {
-            cfg.jellyfin.stations.push_back({"My Playlist", dp, uf});
+            cfg.jellyfin.stations.push_back({"My Playlist", "playlist", dp, uf});
         }
     }
     if (cfg.jellyfin.active_station.empty() && !cfg.jellyfin.stations.empty()) {
@@ -480,6 +481,7 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     for (const auto& st : cfg.jellyfin.stations) {
         e.array_header("jellyfin.stations");
         e.kv("name", st.name);
+        e.kv("target_type", st.target_type);
         e.kv("playlist_id", st.playlist_id);
         e.kv("use_favorites", st.use_favorites);
     }

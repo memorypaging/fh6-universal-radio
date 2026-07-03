@@ -74,9 +74,11 @@ public:
     QueueSnapshot queue_snapshot() const;
     bool jump_to(std::size_t index);
 
-    // POST /api/source/jellyfin/cast: swap to a specific playlist id.
-    // Returns false if the fetch fails (queue left untouched).
-    bool cast(std::string playlist_id, bool use_favorites = false);
+    // POST /api/source/jellyfin/cast: swap to a specific playlist, album, or artist.
+    bool cast(std::string target_type, std::string target_id);
+
+    // GET /api/source/jellyfin/directory
+    std::string fetch_directory(const std::string& type) const;
 
     void set_playback_options(const PlaybackConfig& opts) override;
 
@@ -108,7 +110,8 @@ private:
     worker::WorkerClient* worker_;
 
     mutable std::mutex mu_;
-    std::string target_playlist_; // one-off casting
+    std::string cast_target_type_ = "playlist";
+    std::string cast_target_id_; // one-off casting
     std::vector<JellyfinTrack> queue_;
     std::size_t current_idx_ = 0;
     std::unique_ptr<Pipe> pipe_;

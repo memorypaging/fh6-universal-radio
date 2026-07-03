@@ -205,6 +205,7 @@ SoundCloudStation sc_station_from_json(const json& j) {
 json jf_station_to_json(const JellyfinStation& s) {
     return json{
         {"name", s.name},
+        {"target_type", s.target_type},
         {"playlist_id", s.playlist_id},
         {"use_favorites", s.use_favorites}
     };
@@ -219,6 +220,7 @@ json jf_stations_to_json(const std::vector<JellyfinStation>& v) {
 JellyfinStation jf_station_from_json(const json& j) {
     return JellyfinStation{
         j.value("name", ""),
+        j.value("target_type", "playlist"),
         j.value("playlist_id", ""),
         j.value("use_favorites", false)
     };
@@ -1146,15 +1148,33 @@ struct HttpServer::Impl {
             mgr.switch_to("soundcloud");
             return ok();
         }
+        if (m == "GET" && p.starts_with("/api/source/jellyfin/directory")) {
+            auto* jf = find_typed<sources::JellyfinSource>("jellyfin");
+            if (!jf) return fail(404, "jellyfin not registered");
+            
+            std::string type = "playlist";
+            auto qm = req.path.find('?');
+            if (qm != std::string::npos) {
+                std::string query = req.path.substr(qm + 1);
+                if (query.starts_with("type=")) {
+                    type = query.substr(5);
+                }
+            }
+            
+            std::string dir_json = jf->fetch_directory(type);
+            return send_response(client, 200, dir_json);
+        }
         if (m == "POST" && p == "/api/source/jellyfin/cast") {
             auto* jf = find_typed<sources::JellyfinSource>("jellyfin");
             if (!jf) return fail(404, "jellyfin not registered");
             auto body = json::parse(req.body);
-            auto playlist_id = body.value("playlist_id", std::string{});
-            auto use_favorites = body.value("use_favorites", false);
-            if (playlist_id.empty() && !use_favorites) return fail(400, "playlist_id or use_favorites required");
+            auto target_id = body.value("target_id", std::string{});
+            if (target_id.empty()) target_id = body.value("playlist_id", std::string{});
+            auto target_type = body.value("target_type", std::string{"playlist"});
+            
+            if (target_id.empty() && target_type != "favorites") return fail(400, "target_id required");
             const bool was_active = (mgr.active() == jf);
-            if (!jf->cast(std::move(playlist_id), use_favorites)) return fail(502, "jellyfin fetch failed");
+            if (!jf->cast(std::move(target_type), std::move(target_id))) return fail(502, "jellyfin fetch failed");
             if (was_active) mgr.ring().drain();
             mgr.switch_to("jellyfin");
             return ok();

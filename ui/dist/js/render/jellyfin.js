@@ -9,10 +9,10 @@ import { createStationManager } from "./stationManager.js";
  * Creates a default station object structure.
  *
  * @param {string} name - The name of the station
- * @returns {object} The new station instance { name, playlist_id, use_favorites }
+ * @returns {object} The new station instance { name, target_type, playlist_id, use_favorites }
  */
 function newStation(name) {
-    return { name, playlist_id: "", use_favorites: false };
+    return { name, target_type: "playlist", playlist_id: "", use_favorites: false };
 }
 
 /**
@@ -25,11 +25,15 @@ function newStation(name) {
  * @param {() => Promise<void>} [ctx.onSaved] - Optional callback triggered after successful mutations
  */
 export function createJellyfin(main, ctx) {
-    const idInput = el("input", {
-        type: "text", class: "path-input", placeholder: t("jellyfin.playlist_placeholder"),
-        dataset: { i18nPlaceholder: "jellyfin.playlist_placeholder" }, autocomplete: "off",
-    });
-    const favCheck = el("input", { type: "checkbox" });
+    const typeSelect = el("select", { class: "path-input" }, [
+        el("option", { value: "playlist", dataset: { i18n: "jellyfin.type.playlist" } }, t("jellyfin.type.playlist") || "Playlist"),
+        el("option", { value: "album", dataset: { i18n: "jellyfin.type.album" } }, t("jellyfin.type.album") || "Album"),
+        el("option", { value: "artist", dataset: { i18n: "jellyfin.type.artist" } }, t("jellyfin.type.artist") || "Artist"),
+        el("option", { value: "favorites", dataset: { i18n: "jellyfin.type.favorites" } }, t("jellyfin.type.favorites") || "Favorites"),
+    ]);
+
+    const itemSelect = el("select", { class: "path-input" });
+
     const castBtn = el("button", { type: "button", class: "btn ghost", dataset: { i18n: "btn.cast" } }, t("btn.cast"));
     const saveBtn = el("button", { type: "button", class: "btn filled", dataset: { i18n: "btn.save" } }, t("btn.save"));
     const shuffleBtn = el("button", {
@@ -38,6 +42,58 @@ export function createJellyfin(main, ctx) {
     });
     const summaryEl = el("p", { class: "muted", hidden: true });
     let lastDetails = null;
+
+    let isLoadingDirectory = false;
+    let loadedType = null;
+
+    async function refreshItems() {
+        const type = typeSelect.value;
+        if (type === "favorites") {
+            itemSelect.innerHTML = "";
+            itemSelect.appendChild(el("option", { value: "favorites", selected: true, dataset: { i18n: "jellyfin.all_favorites" } }, t("jellyfin.all_favorites") || "All Favorites"));
+            itemSelect.disabled = true;
+            loadedType = type;
+            return;
+        }
+        itemSelect.disabled = false;
+
+        if (isLoadingDirectory) return;
+        if (loadedType === type && itemSelect.options.length > 1) return;
+
+        isLoadingDirectory = true;
+        itemSelect.innerHTML = "";
+        const loadingOpt = el("option", { disabled: true, selected: true, dataset: { i18n: "label.loading" } }, t("label.loading"));
+        itemSelect.appendChild(loadingOpt);
+        
+        try {
+            const data = await api.jellyfin.getDirectory(type);
+            itemSelect.innerHTML = "";
+            if (!data || data.length === 0) {
+                itemSelect.appendChild(el("option", { disabled: true, selected: true, dataset: { i18n: "label.no_matches" } }, t("label.no_matches")));
+                loadedType = type;
+                return;
+            }
+            
+            for (const item of data) {
+                let text = item.title;
+                itemSelect.appendChild(el("option", { value: item.key }, text));
+            }
+            
+            loadedType = type;
+            // re-select if possible
+            if (station.cur() && station.cur().target_type === type && station.cur().playlist_id) {
+                itemSelect.value = station.cur().playlist_id;
+            }
+        } catch (e) {
+            itemSelect.innerHTML = "";
+            itemSelect.appendChild(el("option", { disabled: true, selected: true }, "Error loading items"));
+            loadedType = null;
+        } finally {
+            isLoadingDirectory = false;
+        }
+    }
+
+    typeSelect.addEventListener("change", refreshItems);
 
     function renderSummary() {
         const s = station.cur();
@@ -72,8 +128,13 @@ export function createJellyfin(main, ctx) {
             await api.transport("jellyfin", "play");
         },
         onStationChange: s => {
-            idInput.value = s?.playlist_id || "";
-            favCheck.checked = !!s?.use_favorites;
+            const newType = s?.target_type || (s?.use_favorites ? "favorites" : "playlist");
+            typeSelect.value = newType;
+            if (loadedType !== newType) {
+                refreshItems();
+            } else {
+                itemSelect.value = s?.playlist_id || "";
+            }
             renderSummary();
         },
         onSync: details => {
@@ -93,9 +154,10 @@ export function createJellyfin(main, ctx) {
         el("div", { class: "stationbar row" }, [stationSelect, onAirBtn]),
         el("div", { class: "row stationtools" }, [newBtn, duplicateBtn, renameBtn, deleteBtn]),
         el("div", { class: "editor" }, [
-            el("label", { class: "field-label", dataset: { i18n: "jellyfin.playlist_id" } }, t("jellyfin.playlist_id")),
-            idInput,
-            el("label", { class: "field-label field checkbox" }, [favCheck, tNode("jellyfin.use_favorites")]),
+            el("label", { class: "field-label", dataset: { i18n: "jellyfin.target_type" } }, t("jellyfin.target_type") || "Type"),
+            typeSelect,
+            el("label", { class: "field-label", dataset: { i18n: "jellyfin.target_item" } }, t("jellyfin.target_item") || "Item"),
+            itemSelect,
             el("div", { class: "row editor-foot" }, [castBtn, saveBtn]),
         ]),
         el("div", { class: "queue" }, [
@@ -111,8 +173,8 @@ export function createJellyfin(main, ctx) {
 
     saveBtn.addEventListener("click", async () => {
         if (station.cur()) {
-            station.cur().playlist_id = idInput.value.trim();
-            station.cur().use_favorites = favCheck.checked;
+            station.cur().target_type = typeSelect.value;
+            station.cur().playlist_id = itemSelect.value;
         }
         try {
             await station.save();
@@ -123,22 +185,22 @@ export function createJellyfin(main, ctx) {
     });
 
     castBtn.addEventListener("click", async () => {
-        const id = idInput.value.trim();
-        const isFav = favCheck.checked;
-        if (!id && !isFav) return;
-        idInput.disabled = true;
-        favCheck.disabled = true;
+        const type = typeSelect.value;
+        const id = itemSelect.value;
+        if (type !== "favorites" && !id) return;
+        typeSelect.disabled = true;
+        itemSelect.disabled = true;
         castBtn.disabled = true;
         try {
-            await api.jellyfin.cast(id, isFav);
+            await api.jellyfin.cast(type, id);
             toast(t("toast.casting", { service: "Jellyfin" }));
             await ctx.onSaved?.();
             station.loadQueue();
         } catch (e) {
             toast(e.message, true);
         } finally {
-            idInput.disabled = false;
-            favCheck.disabled = false;
+            typeSelect.disabled = false;
+            if (typeSelect.value !== "favorites") itemSelect.disabled = false;
             castBtn.disabled = false;
         }
     });
@@ -163,6 +225,11 @@ export function createJellyfin(main, ctx) {
         station.load();
         const details = state?.sources?.available?.find(s => s.name === "jellyfin")?.details;
         station.sync(details);
+
+        // ensure options are loaded if active
+        if (loadedType !== typeSelect.value) {
+            refreshItems();
+        }
     }
 
     return { render, invalidate: station.invalidate };
