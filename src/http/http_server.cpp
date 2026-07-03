@@ -286,7 +286,7 @@ json config_to_json(const Config& c) {
          json{
              {"enabled", c.jellyfin.enabled},
              {"server_url", c.jellyfin.server_url},
-             {"api_key", c.jellyfin.api_key},
+             {"api_key", c.jellyfin.api_key.empty() ? "" : "********"},
              {"user_id", c.jellyfin.user_id},
              {"active_station", c.jellyfin.active_station},
              {"stations", jf_stations_to_json(c.jellyfin.stations)},
@@ -451,7 +451,8 @@ void apply_patch(Config& c, const json& j) {
     if (auto it = j.find("jellyfin"); it != j.end()) {
         c.jellyfin.enabled          = pull(*it, "enabled", c.jellyfin.enabled);
         c.jellyfin.server_url       = pull(*it, "server_url", c.jellyfin.server_url);
-        c.jellyfin.api_key          = pull(*it, "api_key", c.jellyfin.api_key);
+        auto ak = pull<std::string>(*it, "api_key", "");
+        if (!ak.empty() && ak != "********") c.jellyfin.api_key = ak;
         c.jellyfin.user_id          = pull(*it, "user_id", c.jellyfin.user_id);
         c.jellyfin.active_station   = pull(*it, "active_station", c.jellyfin.active_station);
         c.jellyfin.shuffle          = pull(*it, "shuffle", c.jellyfin.shuffle);
