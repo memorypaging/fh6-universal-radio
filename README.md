@@ -40,14 +40,14 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 2. Close FH6.
 3. Extract the ZIP into your Forza Horizon 6 install folder (next to `forzahorizon6.exe`). Overwrite when prompted.
 4. Launch the game. In **Audio settings**, set **Radio DJ = Off**.
-   - For custom stations (local files, Spotify, YouTube Music, Jellyfin, etc.), enable **Streamer Mode**.
+   - For custom stations (local files, Spotify, YouTube Music, SoundCloud, Jellyfin, Plex, etc.), enable **Streamer Mode**.
    - For **Vanilla Radio passthrough**, disable **Streamer Mode**.
 5. Cycle through radio stations until you land on the new one.
 6. Open <http://localhost:8420> in any browser on the same machine. From another device on the same network, use your PC's local IP (e.g. `http://192.168.1.42:8420`), run `ipconfig` in a Command Prompt to find it.
 
 ### Dependencies
 
-Online radio, YouTube Music, SoundCloud, Spotify, Jellyfin, and non-native local formats rely on external binaries: `yt-dlp`, `ffmpeg`, and `librespot`. The mod **downloads them automatically** on first launch into `fh6-radio\bin`, so there's nothing to install by hand.
+Online radio, YouTube Music, SoundCloud, Spotify, Jellyfin, Plex and non-native local formats rely on external binaries: `yt-dlp`, `ffmpeg`, and `librespot`. The mod **downloads them automatically** on first launch into `fh6-radio\bin`, so there's nothing to install by hand.
 
 To manage them yourself instead, set the paths in the dashboard (**Settings > General > yt_dlp path** for yt-dlp, **Settings > General > ffmpeg path** for ffmpeg, **Settings > Spotify Connect** for librespot).
 
