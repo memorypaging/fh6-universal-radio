@@ -88,6 +88,7 @@ target_include_directories(version PRIVATE
     third_party/stb
     third_party/minhook/include
     third_party/kiero
+    third_party/bc7enc
 )
 
 target_link_libraries(version PRIVATE ws2_32 bcrypt psapi winhttp ole32 uuid ksuser runtimeobject)
@@ -113,6 +114,7 @@ target_sources(version PRIVATE
     third_party/minhook/src/hde/hde64.c
     third_party/minhook/src/hde/hde32.c
     third_party/kiero/kiero.cpp
+    third_party/bc7enc/bc7enc.c
     src/fmod/texture_injector.cpp
 )
 

@@ -24,6 +24,8 @@ fetch https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h    
 fetch https://raw.githubusercontent.com/nothings/stb/master/stb_image.h                    stb/stb_image.h
 fetch https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h              stb/stb_image_write.h
 fetch https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h            stb/stb_image_resize2.h
+fetch https://raw.githubusercontent.com/richgel999/bc7enc/master/bc7enc.h                  bc7enc/bc7enc.h
+fetch https://raw.githubusercontent.com/richgel999/bc7enc/master/bc7enc.c                  bc7enc/bc7enc.c
 fetch https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.h                       kiero/kiero.h
 fetch https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.cpp                     kiero/kiero.cpp
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/include/MinHook.h       minhook/include/MinHook.h

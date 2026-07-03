@@ -142,7 +142,7 @@ HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE 
     auto launch = [&] {
         mut = cmd; // CreateProcessW may mutate the buffer; reset for the retry.
         return CreateProcessW(nullptr, mut.data(), nullptr, nullptr, TRUE,
-                              CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, safe_spawn_cwd(), &si,
+                              CREATE_NO_WINDOW | CREATE_SUSPENDED | IDLE_PRIORITY_CLASS, nullptr, safe_spawn_cwd(), &si,
                               &pi) != 0;
     };
     if (!launch()) {

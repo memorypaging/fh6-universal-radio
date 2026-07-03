@@ -69,12 +69,10 @@ Config with_resolved_bins(Config c, const DependencyManager& deps) {
     c.general.ffmpeg_path       = deps.resolve(Tool::ffmpeg, c.general.ffmpeg_path);
     c.general.yt_dlp_path       = deps.resolve(Tool::yt_dlp, c.general.yt_dlp_path);
     c.spotify.librespot_path    = deps.resolve(Tool::librespot, c.spotify.librespot_path);
-    std::string texconv_path    = deps.resolve(Tool::texconv, "").string();
 
     log::info("[bridge] Resolved ffmpeg path to: {}", c.general.ffmpeg_path.string());
     log::info("[bridge] Resolved yt-dlp path to: {}", c.general.yt_dlp_path.string());
     log::info("[bridge] Resolved librespot path to: {}", c.spotify.librespot_path.string());
-    log::info("[bridge] Resolved texconv path to: {}", texconv_path);
     return c;
 }
 

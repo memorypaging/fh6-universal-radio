@@ -14,6 +14,7 @@
 #include "stb_image_resize2.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "bc7enc.h"
 
 namespace fh6 {
 
@@ -34,6 +35,9 @@ void TextureInjector::update_artwork_url(const std::string& url) {
     uint64_t my_job_id = ++latest_job_id_;
 
     std::thread([this, url, my_job_id, local_worker, local_config, local_deps]() {
+        // lower thread priority to prevent starving the games render threads
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+
         // only clear the processing flag if this thread is still the newest job
         struct ProcessingGuard {
             std::atomic<bool>& flag;
@@ -124,14 +128,6 @@ void TextureInjector::update_artwork_url(const std::string& url) {
 
             Config cfg = local_config->snapshot(); // get thread-safe config
             
-            // resolve path using the DependencyManager
-            std::string texconv_path = local_deps->resolve(Tool::texconv, "").string();
-
-            if (texconv_path.empty()) {
-                log::error("[dx12] job {}: missing texconv - cannot process artwork", my_job_id);
-                return;
-            }
-
             log::info("[dx12] job {}: resizing artwork natively using stb...", my_job_id);
 
             // load the raw image
@@ -232,72 +228,57 @@ void TextureInjector::update_artwork_url(const std::string& url) {
                 }
             }
 
-            stbi_write_png(png_path.c_str(), target_w, target_h, 4, padded_data.data(), target_w * 4);
+            // compress in-memory
+            log::info("[dx12] job {}: compressing to BC7 with bc7enc...", my_job_id);
 
-            log::info("[dx12] job {}: compressing to BC7 with texconv...", my_job_id);
+            static std::once_flag init_flag;
+            std::call_once(init_flag, bc7enc_compress_block_init);
 
-            // export to the dynamic size requested
-            std::string texconv_cmd = "\"" + texconv_path + "\" -f BC7_UNORM -w " + std::to_string(target_w) + " -h " + std::to_string(target_h) + " -m 1 -pmalpha -gpu 0 -y -o \"" + temp_dir_str + "\" \"" + png_path + "\"";
-            std::vector<char> cmd_buf(texconv_cmd.begin(), texconv_cmd.end());
-            cmd_buf.push_back('\0');
-            
-            STARTUPINFOA si = { sizeof(si) };
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi = {};
-            
-            if (CreateProcessA(nullptr, cmd_buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-                DWORD wait = WaitForSingleObject(pi.hProcess, 30000);
-                DWORD exit_code = 1;
-                if (wait == WAIT_TIMEOUT) {
-                    fh6::subprocess::kill_process_tree(pi.dwProcessId); 
-                    log::warn("[dx12] job {}: image pipeline timed out", my_job_id);
-                } else {
-                    GetExitCodeProcess(pi.hProcess, &exit_code);
+            bc7enc_compress_block_params pack_params;
+            bc7enc_compress_block_params_init(&pack_params);
+
+            // calculate number of 4x4 blocks
+            int blocks_x = target_w / 4;
+            int blocks_y = target_h / 4;
+
+            std::vector<uint8_t> bc7_payload(blocks_x * blocks_y * 16);
+
+            for (int by = 0; by < blocks_y; ++by) {
+                for (int bx = 0; bx < blocks_x; ++bx) {
+                    uint32_t pixels[16];
+                    for (int y = 0; y < 4; ++y) {
+                        for (int x = 0; x < 4; ++x) {
+                            int src_idx = (((by * 4 + y) * target_w) + (bx * 4 + x)) * 4;
+                            uint8_t r = padded_data[src_idx];
+                            uint8_t g = padded_data[src_idx+1];
+                            uint8_t b = padded_data[src_idx+2];
+                            uint8_t a = padded_data[src_idx+3];
+                            
+                            // pre-multiply alpha
+                            if (a < 255) {
+                                r = (uint8_t)((r * a) / 255);
+                                g = (uint8_t)((g * a) / 255);
+                                b = (uint8_t)((b * a) / 255);
+                            }
+                            
+                            // memory layout is R, G, B, A due to little-endian
+                            pixels[y * 4 + x] = (a << 24) | (b << 16) | (g << 8) | r;
+                        }
+                    }
+                    bc7enc_compress_block(bc7_payload.data() + (by * blocks_x + bx) * 16, pixels, &pack_params);
                 }
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-                if (wait == WAIT_TIMEOUT || exit_code != 0) {
-                    log::warn("[dx12] job {}: image pipeline failed with exit code {}", my_job_id, exit_code);
-                    return;
-                }
-            } else {
-                log::warn("[dx12] job {}: failed to launch pipeline", my_job_id);
-                return;
             }
 
             // don't lock the mutex and push pixels if stale
             if (latest_job_id_.load() != my_job_id) return; 
 
-            std::ifstream in_dds(dds_path, std::ios::binary | std::ios::ate);
-            if (in_dds) {
-                std::streamsize dds_size = in_dds.tellg();
-                if (dds_size > 128) { 
-                    in_dds.seekg(0, std::ios::beg);
-                    std::vector<char> dds_data(dds_size);
-                    if (in_dds.read(dds_data.data(), dds_size)) {
-                        size_t header_size = 128;
-                        uint32_t fourcc;
-                        std::memcpy(&fourcc, dds_data.data() + 84, 4);
-                        if (fourcc == 0x30315844) { header_size = 148; }
-
-                        if (static_cast<size_t>(dds_size) > header_size) {
-                            size_t payload_size = dds_size - header_size;
-                            std::vector<uint8_t> bc7_payload(payload_size);
-                            std::memcpy(bc7_payload.data(), dds_data.data() + header_size, payload_size);
-
-                            std::lock_guard<std::mutex> lock(mtx_);
-                            width_ = target_w; 
-                            height_ = target_h;
-                            pending_pixels_ = std::move(bc7_payload); 
-                            has_new_image_ = true;
-                            log::info("[dx12] job {} complete", my_job_id);
-                        }
-                    }
-                }
-                in_dds.close();
-            } else {
-                log::warn("[dx12] job {}: failed to read DDS", my_job_id);
+            {
+                std::lock_guard<std::mutex> lock(mtx_);
+                width_ = target_w; 
+                height_ = target_h;
+                pending_pixels_ = std::move(bc7_payload); 
+                has_new_image_ = true;
+                log::info("[dx12] job {} complete", my_job_id);
             }
         } catch (const std::exception& e) {
             log::warn("[dx12] job {}: artwork pipeline failed: {}", my_job_id, e.what());

@@ -19,6 +19,8 @@ $deps = @(
     @{ Url = "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h"; Out = "stb\stb_image.h"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h"; Out = "stb\stb_image_write.h"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h"; Out = "stb\stb_image_resize2.h"; Base = $tp },
+    @{ Url = "https://raw.githubusercontent.com/richgel999/bc7enc/master/bc7enc.h"; Out = "bc7enc\bc7enc.h"; Base = $tp },
+    @{ Url = "https://raw.githubusercontent.com/richgel999/bc7enc/master/bc7enc.c"; Out = "bc7enc\bc7enc.c"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.h"; Out = "kiero\kiero.h"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.cpp"; Out = "kiero\kiero.cpp"; Base = $tp },
     
