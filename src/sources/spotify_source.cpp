@@ -80,6 +80,8 @@ struct SpotifySource::Pipe {
     std::string pending_cover_url;
     uint64_t pending_duration_ms = 0;
     uint64_t track_duration_ms   = 0;
+    uint64_t pending_target_bytes= 0;
+    bool pending_is_gapless      = false;
     bool has_pending             = false;
     int stall_ticks              = 0;
     bool force_next_metadata     = false;
@@ -632,7 +634,7 @@ void SpotifySource::pump(RingBuffer& ring) {
                         std::string final_album = p->next_meta_album; // can be empty
                         std::string final_cover = p->next_meta_cover_url;
 
-                        
+
                         // Skip if bytes_consumed has massively overshot (desync).
                         // Otherwise, rely on p->has_explicit_position (set by command=Load)
                         // to know if this is a manual skip/mid-song connect.
@@ -640,42 +642,22 @@ void SpotifySource::pump(RingBuffer& ring) {
                         const uint64_t unplayed = ring.readable();
                         const uint64_t played_bytes =
                             p->bytes_consumed > unplayed ? (p->bytes_consumed - unplayed) : 0;
-                        const bool is_desync =
-                            p->track_duration_ms > 0 && played_bytes >= track_bytes;
 
-                        // First track, an explicit skip/connect, or a desync: apply at once.
-                        if (p->awaiting_first_track || p->force_next_metadata || p->has_explicit_position || is_desync) {
-                            apply_info(final_title, final_artist, final_album, parsed_duration,
-                                    final_cover);
-
-                            if (p->has_explicit_position) {
-                                // sanity check to reject clock-drift desyncs
-                                uint64_t max_bytes = parsed_duration * kBytesPerMs;
-                                if (p->explicit_position_bytes > max_bytes) {
-                                    p->bytes_consumed = 0; 
-                                } else {
-                                    p->bytes_consumed = p->explicit_position_bytes;
-                                }
-                            } else {
-                                p->bytes_consumed =
-                                    is_desync && p->bytes_consumed >= track_bytes
-                                        ? p->bytes_consumed - track_bytes
-                                        : 0;
-                            }
-                            
-                            p->has_explicit_position = false;
-                            p->awaiting_first_track  = false;
-                            p->force_next_metadata   = false;
-                            p->stall_ticks           = 0;
+                        // queue it to sync with PCM commencement (gapless or first-track)
+                        p->pending_title       = final_title;
+                        p->pending_artist      = final_artist;
+                        p->pending_album       = final_album;
+                        p->pending_duration_ms = parsed_duration;
+                        p->pending_cover_url   = final_cover;
+                        p->has_pending         = true;
+                        
+                        if (p->has_explicit_position || p->awaiting_first_track || p->force_next_metadata) {
+                            p->pending_target_bytes = p->bytes_consumed;
+                            p->pending_is_gapless   = false;
                         } else {
-                            // queue it for the gapless transition
-                            p->pending_title       = final_title;
-                            p->pending_artist      = final_artist;
-                            p->pending_album       = final_album;
-                            p->pending_duration_ms = parsed_duration;
-                            p->pending_cover_url   = final_cover;
-                            p->has_pending         = true;
-                            p->has_explicit_position = false; 
+                            // natural gapless transition
+                            p->pending_target_bytes = track_bytes;
+                            p->pending_is_gapless   = true;
                         }
                     }
                 }
@@ -693,19 +675,41 @@ void SpotifySource::pump(RingBuffer& ring) {
         return;
     }
 
-    // natural gapless transition
-    if (p->has_pending && p->track_duration_ms > 0) {
-        uint64_t track_bytes = p->track_duration_ms * kBytesPerMs;
+    // gapless transition and track commence sync
+    if (p->has_pending) {
         uint64_t unplayed = ring.readable();
         uint64_t played_bytes = p->bytes_consumed > unplayed ? (p->bytes_consumed - unplayed) : 0;
 
-        // trigger the metadata swap based on played_bytes
-        if (played_bytes >= track_bytes) {
+        bool should_swap = false;
+        if (p->pending_target_bytes == 0) {
+            should_swap = (played_bytes > 0);
+        } else {
+            should_swap = (played_bytes >= p->pending_target_bytes);
+        }
+
+        if (should_swap) {
             apply_info(p->pending_title, p->pending_artist, p->pending_album,
                     p->pending_duration_ms, p->pending_cover_url);
-            // carry the remainder so the timer stays exact
-            p->bytes_consumed -= track_bytes;
-            p->stall_ticks     = 0;
+            
+            if (p->has_explicit_position) {
+                // sanity check to reject clock-drift desyncs
+                uint64_t max_bytes = p->pending_duration_ms * kBytesPerMs;
+                uint64_t overflow = p->bytes_consumed > p->pending_target_bytes ? (p->bytes_consumed - p->pending_target_bytes) : 0;
+                
+                if (p->explicit_position_bytes > max_bytes) {
+                    p->bytes_consumed = overflow;
+                } else {
+                    p->bytes_consumed = p->explicit_position_bytes + overflow;
+                }
+            } else if (p->pending_is_gapless) {
+                // carry the remainder for gapless so the timer stays exact
+                p->bytes_consumed -= p->pending_target_bytes;
+            }
+            
+            p->has_explicit_position = false;
+            p->awaiting_first_track  = false;
+            p->force_next_metadata   = false;
+            p->stall_ticks           = 0;
         }
     }
 
