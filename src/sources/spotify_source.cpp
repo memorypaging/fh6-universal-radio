@@ -635,13 +635,11 @@ void SpotifySource::pump(RingBuffer& ring) {
                         std::string final_cover = p->next_meta_cover_url;
 
 
-                        // Skip if bytes_consumed has massively overshot (desync).
-                        // Otherwise, rely on p->has_explicit_position (set by command=Load)
-                        // to know if this is a manual skip/mid-song connect.
+                        // Metadata is queued now and applied later once PCM playback
+                        // reaches the computed byte threshold. p->has_explicit_position
+                        // (set by command=Load) distinguishes a manual skip / mid-song
+                        // connect from a natural gapless transition.
                         const uint64_t track_bytes = p->track_duration_ms * kBytesPerMs;
-                        const uint64_t unplayed = ring.readable();
-                        const uint64_t played_bytes =
-                            p->bytes_consumed > unplayed ? (p->bytes_consumed - unplayed) : 0;
 
                         // queue it to sync with PCM commencement (gapless or first-track)
                         p->pending_title       = final_title;
