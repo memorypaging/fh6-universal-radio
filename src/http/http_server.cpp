@@ -886,30 +886,40 @@ struct HttpServer::Impl {
         if (m == "GET" && p == "/api/gamepad") {
             typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
             typedef MMRESULT(WINAPI* joyGetPosEx_t)(UINT, LPJOYINFOEX);
+            typedef MMRESULT(WINAPI* joyGetDevCapsW_t)(UINT_PTR, LPJOYCAPSW, UINT);
             static XInputGetState_t pXInputGetState = nullptr;
             static joyGetPosEx_t pJoyGetPosEx = nullptr;
+            static joyGetDevCapsW_t pJoyGetDevCaps = nullptr;
             static std::once_flag api_once;
             std::call_once(api_once, [] {
                 if (HMODULE h1 = LoadLibraryW(L"xinput1_4.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h1, "XInputGetState"));
                 else if (HMODULE h2 = LoadLibraryW(L"xinput9_1_0.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h2, "XInputGetState"));
                 else if (HMODULE h3 = LoadLibraryW(L"xinput1_3.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h3, "XInputGetState"));
                 
-                if (HMODULE hm = LoadLibraryW(L"winmm.dll")) pJoyGetPosEx = reinterpret_cast<joyGetPosEx_t>(GetProcAddress(hm, "joyGetPosEx"));
+                if (HMODULE hm = LoadLibraryW(L"winmm.dll")) {
+                    pJoyGetPosEx = reinterpret_cast<joyGetPosEx_t>(GetProcAddress(hm, "joyGetPosEx"));
+                    pJoyGetDevCaps = reinterpret_cast<joyGetDevCapsW_t>(GetProcAddress(hm, "joyGetDevCapsW"));
+                }
             });
 
             uint32_t combined = 0;
             if (pXInputGetState) {
-                XINPUT_STATE xs{};
-                if (pXInputGetState(0, &xs) == ERROR_SUCCESS) combined |= xs.Gamepad.wButtons;
+                for (DWORD i = 0; i < 4; ++i) {
+                    XINPUT_STATE xs{};
+                    if (pXInputGetState(i, &xs) == ERROR_SUCCESS) combined |= xs.Gamepad.wButtons;
+                }
             }
             if (pJoyGetPosEx) {
                 for (UINT i = 0; i < 4; ++i) {
+                    JOYCAPSW jc{};
+                    bool has_pov = pJoyGetDevCaps && (pJoyGetDevCaps(i, &jc, sizeof(jc)) == JOYERR_NOERROR) && (jc.wCaps & JOYCAPS_HASPOV);
+
                     JOYINFOEX ji{};
                     ji.dwSize = sizeof(ji);
                     ji.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNPOV;
                     if (pJoyGetPosEx(i, &ji) == JOYERR_NOERROR) {
                         combined |= ji.dwButtons;
-                        if (ji.dwPOV != JOY_POVCENTERED) {
+                        if (has_pov && ji.dwPOV != JOY_POVCENTERED) {
                             if (ji.dwPOV == 0 || ji.dwPOV == 4500 || ji.dwPOV == 31500) combined |= 0x01000000;
                             if (ji.dwPOV == 18000 || ji.dwPOV == 13500 || ji.dwPOV == 22500) combined |= 0x02000000;
                             if (ji.dwPOV == 27000 || ji.dwPOV == 22500 || ji.dwPOV == 31500) combined |= 0x04000000;

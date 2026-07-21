@@ -348,8 +348,10 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     // dynamically load XInput and WinMM (for DirectInput/generic joysticks)
     typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
     typedef MMRESULT(WINAPI* joyGetPosEx_t)(UINT, LPJOYINFOEX);
+    typedef MMRESULT(WINAPI* joyGetDevCapsW_t)(UINT_PTR, LPJOYCAPSW, UINT);
     static XInputGetState_t pXInputGetState = nullptr;
     static joyGetPosEx_t pJoyGetPosEx = nullptr;
+    static joyGetDevCapsW_t pJoyGetDevCaps = nullptr;
     static std::once_flag gamepad_api_once;
     std::call_once(gamepad_api_once, [] {
         HMODULE hXInput = LoadLibraryW(L"xinput1_4.dll");
@@ -364,22 +366,37 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
         if (hWinMM) {
             pJoyGetPosEx = 
                 reinterpret_cast<joyGetPosEx_t>(GetProcAddress(hWinMM, "joyGetPosEx"));
+            pJoyGetDevCaps = 
+                reinterpret_cast<joyGetDevCapsW_t>(GetProcAddress(hWinMM, "joyGetDevCapsW"));
         }
     });
 
-    XINPUT_STATE xstate{};
     const bool has_pad_hotkeys = opts->hotkeys.pad_skip || opts->hotkeys.pad_source || opts->hotkeys.pad_playpause || opts->hotkeys.pad_prev || opts->hotkeys.pad_next_station;
-    bool pad_connected = has_pad_hotkeys && pXInputGetState && (pXInputGetState(0, &xstate) == ERROR_SUCCESS);
+
+    WORD x_buttons = 0;
+    bool pad_connected = false;
+    if (has_pad_hotkeys && pXInputGetState) {
+        for (DWORD i = 0; i < 4; ++i) {
+            XINPUT_STATE xstate{};
+            if (pXInputGetState(i, &xstate) == ERROR_SUCCESS) {
+                pad_connected = true;
+                x_buttons |= xstate.Gamepad.wButtons;
+            }
+        }
+    }
 
     uint32_t joy_buttons = 0;
     if (has_pad_hotkeys && pJoyGetPosEx) {
         for (UINT i = 0; i < 4; ++i) { // query first 4 joysticks to catch wheels
+            JOYCAPSW jc{};
+            bool has_pov = pJoyGetDevCaps && (pJoyGetDevCaps(i, &jc, sizeof(jc)) == JOYERR_NOERROR) && (jc.wCaps & JOYCAPS_HASPOV);
+
             JOYINFOEX ji{};
             ji.dwSize = sizeof(ji);
             ji.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNPOV;
             if (pJoyGetPosEx(i, &ji) == JOYERR_NOERROR) {
                 joy_buttons |= ji.dwButtons;
-                if (ji.dwPOV != JOY_POVCENTERED) {
+                if (has_pov && ji.dwPOV != JOY_POVCENTERED) {
                     if (ji.dwPOV == 0 || ji.dwPOV == 4500 || ji.dwPOV == 31500) joy_buttons |= 0x01000000; // UP
                     if (ji.dwPOV == 18000 || ji.dwPOV == 13500 || ji.dwPOV == 22500) joy_buttons |= 0x02000000; // DOWN
                     if (ji.dwPOV == 27000 || ji.dwPOV == 22500 || ji.dwPOV == 31500) joy_buttons |= 0x04000000; // LEFT
@@ -393,7 +410,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     auto check_pad = [&](int mask) {
         if (!mask || mask == 0x9999) return false;
         auto umask = static_cast<unsigned int>(mask);
-        bool x_pressed = pad_connected && ((xstate.Gamepad.wButtons & umask) == umask);
+        bool x_pressed = pad_connected && ((x_buttons & umask) == umask);
         bool j_pressed = ((joy_buttons & umask) == umask);
         return x_pressed || j_pressed;
     };
