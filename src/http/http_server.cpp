@@ -19,6 +19,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <xinput.h>
+#include <mmsystem.h>
 
 #include <algorithm>
 #include <array>
@@ -881,6 +883,43 @@ struct HttpServer::Impl {
         if (m == "GET" && p == "/api/state") return ok(build_state());
         if (m == "GET" && p == "/api/events") return send_event_snapshot(client);
         if (m == "GET" && p == "/api/sources") return ok(build_sources());
+        if (m == "GET" && p == "/api/gamepad") {
+            typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
+            typedef MMRESULT(WINAPI* joyGetPosEx_t)(UINT, LPJOYINFOEX);
+            static XInputGetState_t pXInputGetState = nullptr;
+            static joyGetPosEx_t pJoyGetPosEx = nullptr;
+            static std::once_flag api_once;
+            std::call_once(api_once, [] {
+                if (HMODULE h1 = LoadLibraryW(L"xinput1_4.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h1, "XInputGetState"));
+                else if (HMODULE h2 = LoadLibraryW(L"xinput9_1_0.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h2, "XInputGetState"));
+                else if (HMODULE h3 = LoadLibraryW(L"xinput1_3.dll")) pXInputGetState = reinterpret_cast<XInputGetState_t>(GetProcAddress(h3, "XInputGetState"));
+                
+                if (HMODULE hm = LoadLibraryW(L"winmm.dll")) pJoyGetPosEx = reinterpret_cast<joyGetPosEx_t>(GetProcAddress(hm, "joyGetPosEx"));
+            });
+
+            uint32_t combined = 0;
+            if (pXInputGetState) {
+                XINPUT_STATE xs{};
+                if (pXInputGetState(0, &xs) == ERROR_SUCCESS) combined |= xs.Gamepad.wButtons;
+            }
+            if (pJoyGetPosEx) {
+                for (UINT i = 0; i < 4; ++i) {
+                    JOYINFOEX ji{};
+                    ji.dwSize = sizeof(ji);
+                    ji.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNPOV;
+                    if (pJoyGetPosEx(i, &ji) == JOYERR_NOERROR) {
+                        combined |= ji.dwButtons;
+                        if (ji.dwPOV != JOY_POVCENTERED) {
+                            if (ji.dwPOV == 0 || ji.dwPOV == 4500 || ji.dwPOV == 31500) combined |= 0x01000000;
+                            if (ji.dwPOV == 18000 || ji.dwPOV == 13500 || ji.dwPOV == 22500) combined |= 0x02000000;
+                            if (ji.dwPOV == 27000 || ji.dwPOV == 22500 || ji.dwPOV == 31500) combined |= 0x04000000;
+                            if (ji.dwPOV == 9000 || ji.dwPOV == 4500 || ji.dwPOV == 13500) combined |= 0x08000000;
+                        }
+                    }
+                }
+            }
+            return ok(json{{"mask", combined}});
+        }
         if (m == "GET" && p.starts_with("/api/artwork")) {
             // ?v=<token> only busts the browser cache; the active source
             // always serves its current track's art.

@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <xinput.h>
+#include <mmsystem.h>
 #include "fh6/fmod/dsp_control_loop.hpp"
 #include "fh6/fmod/radio_discovery.hpp"
 #include "fh6/audio_source.hpp"
@@ -344,11 +345,13 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     prev_race_restart_ = game.race_restart;
 
     // --- Hotkeys ---
-    // dynamically load XInput
+    // dynamically load XInput and WinMM (for DirectInput/generic joysticks)
     typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
+    typedef MMRESULT(WINAPI* joyGetPosEx_t)(UINT, LPJOYINFOEX);
     static XInputGetState_t pXInputGetState = nullptr;
-    static std::once_flag xinput_once;
-    std::call_once(xinput_once, [] {
+    static joyGetPosEx_t pJoyGetPosEx = nullptr;
+    static std::once_flag gamepad_api_once;
+    std::call_once(gamepad_api_once, [] {
         HMODULE hXInput = LoadLibraryW(L"xinput1_4.dll");
         if (!hXInput) hXInput = LoadLibraryW(L"xinput9_1_0.dll");
         if (!hXInput) hXInput = LoadLibraryW(L"xinput1_3.dll");
@@ -356,15 +359,43 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
             pXInputGetState =
                 reinterpret_cast<XInputGetState_t>(GetProcAddress(hXInput, "XInputGetState"));
         }
+        
+        HMODULE hWinMM = LoadLibraryW(L"winmm.dll");
+        if (hWinMM) {
+            pJoyGetPosEx = 
+                reinterpret_cast<joyGetPosEx_t>(GetProcAddress(hWinMM, "joyGetPosEx"));
+        }
     });
 
     XINPUT_STATE xstate{};
     const bool has_pad_hotkeys = opts->hotkeys.pad_skip || opts->hotkeys.pad_source || opts->hotkeys.pad_playpause || opts->hotkeys.pad_prev || opts->hotkeys.pad_next_station;
     bool pad_connected = has_pad_hotkeys && pXInputGetState && (pXInputGetState(0, &xstate) == ERROR_SUCCESS);
 
+    uint32_t joy_buttons = 0;
+    if (has_pad_hotkeys && pJoyGetPosEx) {
+        for (UINT i = 0; i < 4; ++i) { // query first 4 joysticks to catch wheels
+            JOYINFOEX ji{};
+            ji.dwSize = sizeof(ji);
+            ji.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNPOV;
+            if (pJoyGetPosEx(i, &ji) == JOYERR_NOERROR) {
+                joy_buttons |= ji.dwButtons;
+                if (ji.dwPOV != JOY_POVCENTERED) {
+                    if (ji.dwPOV == 0 || ji.dwPOV == 4500 || ji.dwPOV == 31500) joy_buttons |= 0x01000000; // UP
+                    if (ji.dwPOV == 18000 || ji.dwPOV == 13500 || ji.dwPOV == 22500) joy_buttons |= 0x02000000; // DOWN
+                    if (ji.dwPOV == 27000 || ji.dwPOV == 22500 || ji.dwPOV == 31500) joy_buttons |= 0x04000000; // LEFT
+                    if (ji.dwPOV == 9000 || ji.dwPOV == 4500 || ji.dwPOV == 13500) joy_buttons |= 0x08000000; // RIGHT
+                }
+            }
+        }
+    }
+
     // helper to resolve overlap conflicts
     auto check_pad = [&](int mask) {
-        return pad_connected && mask && (mask != 0x9999) && ((xstate.Gamepad.wButtons & mask) == mask);
+        if (!mask || mask == 0x9999) return false;
+        auto umask = static_cast<unsigned int>(mask);
+        bool x_pressed = pad_connected && ((xstate.Gamepad.wButtons & umask) == umask);
+        bool j_pressed = ((joy_buttons & umask) == umask);
+        return x_pressed || j_pressed;
     };
 
     // check keyboard (direct)

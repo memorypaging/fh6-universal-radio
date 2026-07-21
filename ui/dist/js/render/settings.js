@@ -122,29 +122,21 @@ function buildKeybindField({ id, label, type, cur, dataset, args: [optionsArg] }
         });
     } else {
         let padInterval;
-        const gpMap = [
-            0x1000, 0x2000, 0x4000, 0x8000, 0x0100, 0x0200, null, null,
-            0x0020, 0x0010, 0x0040, 0x0080, 0x0001, 0x0002, 0x0004, 0x0008
-        ];
 
         customInput.addEventListener("focus", () => {
-            padInterval = setInterval(() => {
-                const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-                for (let gp of gamepads) {
-                    if (!gp) continue;
-                    let currentMask = 0;
-                    for (let i = 0; i < gp.buttons.length; i++) {
-                        if (gp.buttons[i].pressed && gpMap[i]) {
-                            currentMask |= gpMap[i];
-                        }
-                    }
+            padInterval = setInterval(async () => {
+                try {
+                    const res = await fetch("/api/gamepad");
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const currentMask = data.mask;
                     if (currentMask > 0) {
                         const str = formatPad(currentMask);
                         customInput.value = str;
                         if (select.value === "custom") hiddenInput.value = currentMask;
                     }
-                }
-            }, 50);
+                } catch (e) {}
+            }, 100);
         });
 
         customInput.addEventListener("blur", () => clearInterval(padInterval));

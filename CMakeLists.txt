@@ -24,7 +24,11 @@ add_compile_definitions(_WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX
 if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8 /MP /EHsc /wd4324)
     add_compile_options("$<$<CONFIG:Release>:/O2;/GL;/Gy;/Gw>")
-    add_link_options("$<$<CONFIG:Release>:/LTCG;/OPT:REF;/OPT:ICF>")
+    # remove absolute paths from __FILE__ and std::source_location
+    file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}" SOURCE_ROOT_NATIVE)
+    add_compile_options("/d1trimfile:${SOURCE_ROOT_NATIVE}\\")
+    # /PDBALTPATH prevents the linker from embedding the absolute path into the DLL
+    add_link_options("$<$<CONFIG:Release>:/LTCG;/OPT:REF;/OPT:ICF;/PDBALTPATH:stripped.pdb>")
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     # llvm-mingw (Clang). Match the MSVC profile as closely as makes sense:
@@ -92,6 +96,13 @@ target_include_directories(version PRIVATE
 )
 
 target_link_libraries(version PRIVATE ws2_32 bcrypt psapi winhttp ole32 uuid ksuser runtimeobject)
+
+if(MSVC)
+    target_link_options(version PRIVATE /DELAYLOAD:ws2_32.dll /DELAYLOAD:winhttp.dll)
+    target_link_libraries(version PRIVATE delayimp)
+else()
+    target_link_options(version PRIVATE -Wl,--delayload,ws2_32.dll -Wl,--delayload,winhttp.dll)
+endif()
 
 set_target_properties(version PROPERTIES
     OUTPUT_NAME version
